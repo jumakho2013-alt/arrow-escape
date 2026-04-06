@@ -968,22 +968,22 @@ function drawMenu(){
   const demoDir=floor(t)%4;
   const demoPhase=(t%1);
   if(demoPhase<.7){
-    drawArrow(W/2,H*.52,demoDir,90,TH.textDim,.12);
+    drawArrow(W/2,H*.42,demoDir,70,TH.textDim,.10);
   }else{
     const p=(demoPhase-.7)/.3;
     const dx=DX[demoDir]*200*p,dy=DY[demoDir]*200*p;
     X.globalAlpha=1-p;
-    drawArrow(W/2+dx,H*.52+dy,demoDir,90,TH.textDim,.12*(1-p));
+    drawArrow(W/2+dx,H*.42+dy,demoDir,70,TH.textDim,.10*(1-p));
     X.globalAlpha=1;
   }
 
-  // Title — well below top for breathing room
-  txtP('ARROW',W/2,H*.24,36,TH.text);
-  txtP('ESCAPE',W/2,H*.30,36,TH.accent);
-  txt('puzzle game',W/2,H*.35,12,TH.textSec);
+  // Title — close to top, right under coins/settings bar
+  txtP('ARROW',W/2,H*.11,36,TH.text);
+  txtP('ESCAPE',W/2,H*.17,36,TH.accent);
+  txt('puzzle game',W/2,H*.22,12,TH.textSec);
 
-  // Stats panel — 4-column summary card
-  const spY=H*.44,spW=300,spH=66;
+  // Stats panel — tight under title
+  const spY=H*.30,spW=300,spH=66;
   X.fillStyle=TH.cardBg;
   X.beginPath();X.roundRect(W/2-spW/2,spY-spH/2,spW,spH,14);X.fill();
   X.strokeStyle=TH.border;X.lineWidth=1;
@@ -998,14 +998,15 @@ function drawMenu(){
   txtP('TROPHY',col4,spY-13,9,TH.textSec);
   txtP(achUnlockedCount()+'/'+ACHIEVEMENTS.length,col4,spY+9,13,TH.accent);
 
-  // PLAY button
-  if(drawBigBtn('▶  PLAY',W/2,H*.57,210,56,TH.accent)){
+  // PLAY button — centered in the open space
+  if(drawBigBtn('▶  PLAY',W/2,H*.52,210,56,TH.accent)){
     goto('play',()=>{isDaily=false;isWeekly=false;level=maxLevel;generateLevel(level)});
   }
 
   // 2×2 grid of secondary buttons
+  // Nav buttons — pushed down to bottom half
   const bW=138,bH=42,bGapX=16,bGapY=12;
-  const gX=W/2,gY1=H*.68,gY2=gY1+bH+bGapY;
+  const gX=W/2,gY1=H*.65,gY2=gY1+bH+bGapY;
   // Row 1
   if(drawBtn('LEVELS',gX-bW/2-bGapX/2,gY1,bW,bH)){
     goto('levels',()=>{levelsPage=floor((level-1)/25)});
