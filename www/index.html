@@ -475,12 +475,15 @@ function generateLevel(lvl,customSeed){
     (x,y)=>{const d=Math.sqrt((x-.5)**2+(y-.5)**2);return d<.42},
   ];
 
-  const isShapeLevel=(lvl%10===0)&&lvl>5;
+  const isShapeLevel=(lvl%10===0)&&lvl>5&&lvl<=200;
   if(isShapeLevel){
     const shapeIdx=(floor(lvl/10)-1)%SHAPES.length;
     const shapeFn=SHAPES[shapeIdx];
+    // Scale shape to fill ~80% of grid (add padding so shape isn't clipped)
+    const pad=.08;
     for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
-      const nx=(c+.5)/cols,ny=(r+.5)/rows;
+      const nx=pad+(c+.5)/cols*(1-2*pad);
+      const ny=pad+(r+.5)/rows*(1-2*pad);
       if(!shapeFn(nx,ny))occ[r][c]=-2; // forbidden — outside shape
     }
   }
