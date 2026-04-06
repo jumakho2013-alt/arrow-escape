@@ -134,6 +134,9 @@ function haptic(ms){try{navigator.vibrate(ms)}catch(e){}}
 // ================================================================
 let S='menu'; // menu|play|complete|levels|settings|daily|challenge
 let level=+localStorage.getItem('ae_level')||1;
+// maxLevel = highest level ever reached. Used for unlocking in level select.
+// level = currently playing level (can go back to replay earlier levels).
+let maxLevel=+localStorage.getItem('ae_maxlevel')||level;
 // New players start with 60 coins — enough for one hint + a taste of the economy
 let coins=localStorage.getItem('ae_coins')!=null?(+localStorage.getItem('ae_coins')):60;
 let stars=JSON.parse(localStorage.getItem('ae_stars')||'{}');
@@ -185,6 +188,7 @@ const DIR_NAMES=['→','↑','←','↓'];
 
 function save(){
   localStorage.setItem('ae_level',level);
+  if(level>maxLevel){maxLevel=level;localStorage.setItem('ae_maxlevel',maxLevel)}
   localStorage.setItem('ae_coins',coins);
   localStorage.setItem('ae_stars',JSON.stringify(stars));
   localStorage.setItem('ae_ach',JSON.stringify(achUnlocked));
@@ -982,7 +986,7 @@ function drawMenu(){
   X.beginPath();X.roundRect(W/2-spW/2,spY-spH/2,spW,spH,14);X.stroke();
   const col1=W/2-spW/2+spW*.125,col2=W/2-spW/2+spW*.375,col3=W/2-spW/2+spW*.625,col4=W/2-spW/2+spW*.875;
   txtP('LEVEL',col1,spY-13,9,TH.textSec);
-  txtP(level+'',col1,spY+9,17,TH.text);
+  txtP(maxLevel+'',col1,spY+9,17,TH.text);
   txtP('STARS',col2,spY-13,9,TH.textSec);
   txtP(totalStars+'',col2,spY+9,17,TH.star);
   txtP('STREAK',col3,spY-13,9,TH.textSec);
@@ -992,7 +996,7 @@ function drawMenu(){
 
   // PLAY button
   if(drawBigBtn('▶  PLAY',W/2,H*.57,210,56,TH.accent)){
-    goto('play',()=>{isDaily=false;isWeekly=false;generateLevel(level)});
+    goto('play',()=>{isDaily=false;isWeekly=false;level=maxLevel;generateLevel(level)});
   }
 
   // 2×2 grid of secondary buttons
@@ -1529,7 +1533,7 @@ function drawLevels(){
     const x=startX+c*cellW+cellW/2;
     const y=startY+r*cellH+cellH/2;
 
-    const unlocked=lv<=level;
+    const unlocked=lv<=maxLevel;
     const current=lv===level;
     const done=stars[lv]>0;
     const s=stars[lv]||0;
