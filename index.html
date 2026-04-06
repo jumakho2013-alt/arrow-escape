@@ -136,7 +136,10 @@ let S='menu'; // menu|play|complete|levels|settings|daily|challenge
 let level=+localStorage.getItem('ae_level')||1;
 // maxLevel = highest level ever reached. Used for unlocking in level select.
 // level = currently playing level (can go back to replay earlier levels).
+// Recover maxLevel from stars data if ae_maxlevel was never saved (migration).
 let maxLevel=+localStorage.getItem('ae_maxlevel')||level;
+{const starKeys=Object.keys(stars).map(Number).filter(n=>n>0);
+if(starKeys.length>0)maxLevel=max(maxLevel,max(...starKeys)+1)}
 // New players start with 60 coins — enough for one hint + a taste of the economy
 let coins=localStorage.getItem('ae_coins')!=null?(+localStorage.getItem('ae_coins')):60;
 let stars=JSON.parse(localStorage.getItem('ae_stars')||'{}');
