@@ -663,7 +663,7 @@ function tapArrowByIndex(idx){
     anims.push({
       arrow:a,
       dir:a.dir,
-      t:0,dur:.75,
+      t:0,dur:1.2,
       col:TH.arrow,cs,gx,gy,
       bodyLen,totalDist:bodyLen+extLen,
     });
@@ -1145,7 +1145,7 @@ function drawPlay(){
     const path=buildArrowWorldPath(an.arrow,an.cs,an.gx,an.gy);
 
     const p=an.t/an.dur;
-    const ep=p*p; // ease-in: start slow, accelerate
+    const ep=p<.5?2*p*p:1-2*(1-p)*(1-p); // ease-in-out: smooth start and end
     const tailPos=ep*an.totalDist;
     const headPos=tailPos+an.bodyLen;
     const pts=getPathSegment(path,tailPos,headPos);
