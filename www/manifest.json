@@ -1,0 +1,15 @@
+{
+  "name": "Arrow Escape — Puzzle Game",
+  "short_name": "Arrow Escape",
+  "description": "Untangle the arrow maze! Tap arrows to escape in the right order.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f2ed",
+  "theme_color": "#5c7caa",
+  "categories": ["games", "puzzle"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

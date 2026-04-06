@@ -1,0 +1,7 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1024' height='1024'>
+  <rect width='1024' height='1024' rx='200' fill='#5c7caa'/>
+  <g stroke='white' stroke-width='60' stroke-linecap='round' stroke-linejoin='round' fill='none'>
+    <polyline points='280,660 280,300 580,300 580,500 750,500'/>
+  </g>
+  <polygon points='820,500 680,420 680,580' fill='white'/>
+</svg>

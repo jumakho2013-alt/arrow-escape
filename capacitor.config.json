@@ -1,0 +1,26 @@
+{
+  "appId": "com.arrowescape.puzzle",
+  "appName": "Arrow Escape",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 1500,
+      "backgroundColor": "#f5f2ed",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "dark",
+      "backgroundColor": "#f5f2ed"
+    }
+  },
+  "android": {
+    "backgroundColor": "#f5f2ed"
+  },
+  "ios": {
+    "backgroundColor": "#f5f2ed"
+  }
+}

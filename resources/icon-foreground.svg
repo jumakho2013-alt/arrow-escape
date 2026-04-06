@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Foreground for adaptive icon — centered arrow path with safe zone -->
+  <g stroke="white" stroke-width="46" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polyline points="300,680 300,440 440,440 440,560 560,560 560,400 700,400"/>
+  </g>
+  <polygon points="755,400 675,340 675,460" fill="white"/>
+  <!-- Small accent -->
+  <g stroke="rgba(255,255,255,0.3)" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polyline points="520,720 640,720"/>
+  </g>
+  <polygon points="675,720 635,696 635,744" fill="rgba(255,255,255,0.3)"/>
+</svg>
