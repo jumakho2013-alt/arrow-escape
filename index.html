@@ -299,11 +299,48 @@ function updateStreak(){
   save();
 }
 
-// Currency sinks — hint, continue-after-gameover, skip-level
-const HINT_COST=50;
-const CONTINUE_COST=50;
-const SKIP_COST=150;
+// Currency sinks — expensive so players run out and watch ads
+const HINT_COST=100;
+const CONTINUE_COST=100;
+const SKIP_COST=200;
 const WEEKLY_REWARD=200;
+const AD_COIN_REWARD=60; // coins earned from watching a rewarded ad
+
+// Ads system — placeholder functions, swap with real AdMob later
+let adsRemoved=localStorage.getItem('ae_noads')==='1';
+let lastInterstitialTime=0; // timestamp of last interstitial shown
+const INTERSTITIAL_INTERVAL=300; // seconds between interstitials (5 min)
+let adRewardCallback=null; // callback after rewarded ad completes
+
+// Placeholder: replace with @capacitor-community/admob calls
+function showRewardedAd(onReward){
+  // TODO: replace with real AdMob rewarded ad
+  // AdMob.showRewardVideoAd().then(()=>onReward());
+  // For now, simulate: give reward immediately (remove in production!)
+  adRewardCallback=onReward;
+  // Simulate ad watched:
+  if(onReward)onReward();
+}
+function showInterstitialAd(){
+  if(adsRemoved)return;
+  const now=gt;
+  if(now-lastInterstitialTime<INTERSTITIAL_INTERVAL)return;
+  lastInterstitialTime=now;
+  // TODO: replace with real AdMob interstitial
+  // AdMob.showInterstitial();
+}
+function buyRemoveAds(){
+  // TODO: replace with Google Play Billing
+  // For now, just set the flag
+  adsRemoved=true;
+  localStorage.setItem('ae_noads','1');
+}
+function buyCoins(amount){
+  // TODO: replace with Google Play Billing
+  coins+=amount;
+  totalCoinsEarned+=amount;
+  save();
+}
 function useHint(){
   if(coins<HINT_COST||hintTime>0)return false;
   for(let i=0;i<arrows.length;i++){
@@ -1218,6 +1255,7 @@ function drawComplete(){
     }
   }else{
     if(drawBigBtn('NEXT LEVEL',W/2,H*.67,200,50,TH.accent)){
+      showInterstitialAd(); // timed interstitial every 5 min
       goto('play',()=>{level++;save();generateLevel(level)});
     }
     if(drawBtn('REPLAY',W/2,H*.74,140,36)){
@@ -1371,27 +1409,41 @@ function drawGameOver(){
   txt('You ran out of hearts',W/2,H*.44,13,TH.textSec);
 
   // Buttons
-  if(drawBigBtn('RETRY',W/2,H*.56,200,50,TH.accent)){
+  if(drawBigBtn('RETRY',W/2,H*.50,200,48,TH.accent)){
+    showInterstitialAd(); // show ad between retries
     goto('play',()=>{generateLevel(level)});
   }
 
   // Continue for coins
   const canContinue=coins>=CONTINUE_COST;
-  const cby=H*.65,cbw=220,cbh=46;
+  const cby=H*.58,cbw=220,cbh=42;
   const cbhv=abs(mx-W/2)<cbw/2&&abs(my-cby)<cbh/2;
   X.fillStyle=canContinue?(cbhv?TH.star+'35':TH.star+'20'):TH.btnBg;
   X.beginPath();X.roundRect(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);X.fill();
   X.strokeStyle=canContinue?TH.star+'70':TH.border;X.lineWidth=1.5;
   X.beginPath();X.roundRect(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);X.stroke();
-  txt('CONTINUE',W/2-28,cby,15,canContinue?TH.text:TH.textDim);
-  drawCoin(W/2+22,cby,8);
-  txt(CONTINUE_COST+'',W/2+34,cby,13,canContinue?TH.star:TH.textDim,'left');
+  txt('CONTINUE',W/2-28,cby,14,canContinue?TH.text:TH.textDim);
+  drawCoin(W/2+22,cby,7);
+  txt(CONTINUE_COST+'',W/2+33,cby,12,canContinue?TH.star:TH.textDim,'left');
   if(tapped&&abs(tapX-W/2)<cbw/2&&abs(tapY-cby)<cbh/2){
     if(canContinue)continueFromGameover();
     tapped=false;
   }
 
-  if(drawBtn('HOME',W/2,H*.74,140,38)){goto('menu')}
+  // Continue by watching ad (FREE alternative)
+  const aby=H*.66;
+  if(drawBtn('CONTINUE (Watch Ad)',W/2,aby,220,42,TH.success)){
+    showRewardedAd(()=>{undosLeft=3;S='play'});
+  }
+
+  // Watch ad for coins (when low on coins)
+  if(coins<CONTINUE_COST){
+    if(drawBtn('GET '+AD_COIN_REWARD+' COINS (Ad)',W/2,H*.73,220,38,TH.star)){
+      showRewardedAd(()=>{coins+=AD_COIN_REWARD;totalCoinsEarned+=AD_COIN_REWARD;save();spawnFloater(W/2,H*.73,'+'+AD_COIN_REWARD)});
+    }
+  }
+
+  if(drawBtn('HOME',W/2,H*.81,140,38)){goto('menu')}
 
   // Coins display top-right
   drawCoin(W-50,36,7);
@@ -1414,18 +1466,32 @@ function drawSettings(){
   if(drawBtn('Theme: '+(darkMode?'Dark':'Light'),W/2,200,200,44)){
     darkMode=!darkMode;localStorage.setItem('ae_theme',darkMode?'dark':'light');applyTheme();
   }
+  // Remove Ads — $3.99
+  if(!adsRemoved){
+    if(drawBtn('Remove Ads — $3.99',W/2,280,220,44,TH.accent)){
+      buyRemoveAds(); // TODO: connect to Google Play Billing
+    }
+  }else{
+    txt('Ads removed ★',W/2,280,13,TH.success);
+  }
+
+  // Watch Ad for Coins
+  if(drawBtn('Watch Ad → +'+AD_COIN_REWARD+' Coins',W/2,340,220,44,TH.star)){
+    showRewardedAd(()=>{coins+=AD_COIN_REWARD;totalCoinsEarned+=AD_COIN_REWARD;save();spawnFloater(W/2,340,'+'+AD_COIN_REWARD)});
+  }
+
   // Reset — two-tap confirmation (no native dialogs)
   if(!resetConfirm){
-    if(drawBtn('Reset Progress',W/2,280,200,44,TH.warning)){resetConfirm=true}
+    if(drawBtn('Reset Progress',W/2,420,200,44,TH.warning)){resetConfirm=true}
   }else{
-    txt('Are you sure?',W/2,270,13,TH.warning);
-    if(drawBtn('YES, RESET',W/2-60,310,110,40,TH.arrowBlock)){
+    txt('Are you sure?',W/2,410,13,TH.warning);
+    if(drawBtn('YES, RESET',W/2-60,450,110,40,TH.arrowBlock)){
       localStorage.clear();level=1;coins=60;stars={};totalStars=0;
       achUnlocked={};totalPerfect=0;totalDailies=0;noHintCount=0;
       totalCoinsEarned=0;streakDays=0;totalPlayTime=0;fastestLevel=99999;
-      resetConfirm=false;save();
+      adsRemoved=false;resetConfirm=false;save();
     }
-    if(drawBtn('CANCEL',W/2+60,310,110,40)){resetConfirm=false}
+    if(drawBtn('CANCEL',W/2+60,450,110,40)){resetConfirm=false}
   }
 
   if(drawBtn('← BACK',W/2,H-60,140,38)){resetConfirm=false;goto('menu')}
