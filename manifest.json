@@ -1,7 +1,7 @@
 {
-  "name": "Arrow Escape — Puzzle Game",
-  "short_name": "Arrow Escape",
-  "description": "Untangle the arrow maze! Tap arrows to escape in the right order.",
+  "name": "Stray Arrows — Puzzle Game",
+  "short_name": "Stray Arrows",
+  "description": "Untangle stray arrows! Tap arrows to escape in the right order.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

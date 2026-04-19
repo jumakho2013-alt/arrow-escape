@@ -1,14 +1,14 @@
-# Arrow Escape — Play Store Listing
+# Stray Arrows — Play Store Listing
 
 ## App Name
-Arrow Escape — Puzzle Game
+Stray Arrows — Puzzle Game
 
 ## Short Description (80 chars)
 Untangle arrow mazes! Tap arrows to escape in the right order.
 
 ## Full Description (English)
 
-Arrow Escape is a minimalist puzzle game where you untangle intricate arrow mazes.
+Stray Arrows is a minimalist puzzle game where you untangle intricate arrow mazes.
 
 HOW TO PLAY
 Each level presents a maze of intertwined arrows. Tap an arrow to send it flying — but only if its path is clear! Remove all arrows to complete the level.
@@ -40,7 +40,7 @@ Clean design. Smart puzzles. Zero distractions.
 
 ## Full Description (Russian)
 
-Arrow Escape — минималистичная головоломка, где вы распутываете лабиринты из стрелок.
+Stray Arrows — минималистичная головоломка, где вы распутываете лабиринты из стрелок.
 
 КАК ИГРАТЬ
 Каждый уровень — переплетённые стрелки. Нажми на стрелку, чтобы она улетела — но только если путь свободен! Убери все стрелки, чтобы пройти уровень.

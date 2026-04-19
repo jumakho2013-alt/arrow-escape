@@ -1,6 +1,6 @@
 {
-  "appId": "com.arrowescape.puzzle",
-  "appName": "Arrow Escape",
+  "appId": "com.strayarrows.puzzle",
+  "appName": "Stray Arrows",
   "webDir": "www",
   "server": {
     "androidScheme": "https"
