@@ -1384,8 +1384,8 @@ function drawComplete(){
 
   // Coins earned
   const coinReward=isWeekly?WEEKLY_REWARD:(isDaily?50:5+s*5);
-  drawCoin(W/2-22,H*.58,9);
-  txtP('+'+coinReward,W/2+8,H*.58,16,TH.star);
+  drawCoin(W/2-22,H*.60,9);
+  txtP('+'+coinReward,W/2+8,H*.60,16,TH.star);
 
   // Buttons — daily/weekly return to menu; normal level goes to next
   if(isDaily||isWeekly){
@@ -1484,11 +1484,11 @@ function drawAchievements(){
       X.beginPath();X.arc(42,y+cardH/2,10,0,TAU);X.fill();
     }
     // Name + desc
-    txt(a.name,70,y+18,13,done?TH.text:TH.textSec,'left','700');
-    txt(a.desc,70,y+36,11,done?TH.textSec:TH.textDim,'left');
-    // Reward
-    drawCoin(cardW-20,y+cardH/2,7);
-    txt('+'+a.reward,cardW-4,y+cardH/2,11,done?TH.star:TH.textDim,'left');
+    txt(a.name,65,y+18,12,done?TH.text:TH.textSec,'left','700');
+    txt(a.desc,65,y+36,10,done?TH.textSec:TH.textDim,'left');
+    // Reward — inside card bounds
+    drawCoin(cardW-10,y+cardH/2,6);
+    txt('+'+a.reward,cardW+2,y+cardH/2,10,done?TH.star:TH.textDim,'left');
   }
 
   if(drawBtn('← BACK',W/2,H-50,140,38)){goto('menu')}
@@ -1510,7 +1510,7 @@ function drawAchPopup(){
   else if(p>.85)offY=-((p-.85)/.15)*80;
   else offY=0;
 
-  const pw=280,ph=58,px=(W-pw)/2,py=20+offY;
+  const pw=320,ph=58,px=(W-pw)/2,py=20+offY;
   X.save();
   X.shadowColor='rgba(0,0,0,.3)';X.shadowBlur=15;X.shadowOffsetY=3;
   X.fillStyle=TH.surface;
@@ -1521,11 +1521,11 @@ function drawAchPopup(){
   // Star icon
   drawStar(px+28,py+ph/2,14,true);
   // Text
-  txt('ACHIEVEMENT UNLOCKED',px+55,py+17,9,TH.star,'left','700');
-  txtP(a.name,px+55,py+36,13,TH.text,'left');
-  // Reward
-  drawCoin(px+pw-26,py+ph/2,8);
-  txt('+'+a.reward,px+pw-12,py+ph/2,11,TH.star,'left');
+  txt('ACHIEVEMENT UNLOCKED',px+50,py+17,8,TH.star,'left','700');
+  txtP(a.name,px+50,py+36,12,TH.text,'left');
+  // Reward — inside the box
+  drawCoin(px+pw-40,py+ph/2,7);
+  txt('+'+a.reward,px+pw-28,py+ph/2,10,TH.star,'left');
 }
 
 // --- GAME OVER ---
