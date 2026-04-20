@@ -1172,6 +1172,44 @@ function drawPlay(){
   // Tick down hint timer
   if(hintTime>0){hintTime-=1/60;if(hintTime<=0)hintArrow=-1}
 
+  // Tutorial overlay on level 1 — guide player to tap the right arrow
+  if(level===1&&!isDaily&&!isWeekly&&arrows.length>0){
+    const aliveCount=arrows.filter(a=>a.alive).length;
+    // Find first solvable arrow for tutorial highlight
+    let tutIdx=-1;
+    for(let i=0;i<arrows.length;i++){
+      if(arrows[i].alive&&canEscape(i)){tutIdx=i;break}
+    }
+    if(tutIdx>=0&&aliveCount===arrows.length){
+      // First move — show full tutorial
+      const pulse=.5+.5*sin(gt*4);
+      // Dim everything except the tutorial arrow
+      X.fillStyle=darkMode?'rgba(26,26,46,.5)':'rgba(0,0,0,.3)';
+      X.fillRect(0,0,W,H);
+      // Redraw the tutorial arrow on top (bright)
+      const ta=arrows[tutIdx];
+      X.save();
+      X.shadowColor=TH.star;
+      X.shadowBlur=12+pulse*16;
+      drawArrowStatic(ta,cs,gx,gy,TH.star,1,0);
+      X.restore();
+      drawArrowStatic(ta,cs,gx,gy,TH.arrow,1,0);
+      // Tutorial text
+      txt('Tap the arrow with a clear path',W/2,H*.08,14,TH.text);
+      txt('to the edge of the board',W/2,H*.08+20,12,TH.textSec);
+      // Pointing hand emoji / arrow indicator
+      const head=ta.cells[ta.cells.length-1];
+      const hx=gx+head[1]*cs+cs/2,hy=gy+head[0]*cs+cs/2;
+      X.fillStyle=TH.star;
+      X.globalAlpha=.6+pulse*.4;
+      X.beginPath();X.arc(hx,hy+cs*.8+pulse*4,6,0,TAU);X.fill();
+      X.globalAlpha=1;
+    }else if(aliveCount<arrows.length&&aliveCount>arrows.length-3){
+      // First few moves done — encourage
+      txt('Great! Keep going!',W/2,H*.08,14,TH.success);
+    }
+  }
+
   // Tap detection — find the alive arrow whose nearest cell center is closest
   // to the tap point (within a generous radius).
   if(tapped){
