@@ -374,23 +374,36 @@ const INTERSTITIAL_INTERVAL=300; // seconds between interstitials (5 min)
 let adRewardCallback=null; // callback after rewarded ad completes
 
 // Real AdMob integration via @capacitor-community/admob
+// Per-platform ad unit IDs. iOS IDs are placeholders — Google's official test
+// IDs that always serve a test ad. Replace with real iOS unit IDs from the
+// AdMob console when ready (search for "REPLACE_IOS_" below).
+const _isIOS=()=>typeof Capacitor!=='undefined'&&Capacitor.getPlatform&&Capacitor.getPlatform()==='ios';
+const REWARDED_ID =()=>_isIOS()
+  ? 'ca-app-pub-3940256099942544/1712485313'  /* REPLACE_IOS_REWARDED — Google test ID */
+  : 'ca-app-pub-1164170950110129/7243043308';  /* Android — real */
+const INTERSTITIAL_ID=()=>_isIOS()
+  ? 'ca-app-pub-3940256099942544/4411468910'  /* REPLACE_IOS_INTERSTITIAL — Google test ID */
+  : 'ca-app-pub-1164170950110129/6672197661';  /* Android — real */
+
 let admobReady=false;
 async function initAdMob(){
   try{
     if(typeof Capacitor==='undefined'||!Capacitor.Plugins.AdMob)return;
     const AdMob=Capacitor.Plugins.AdMob;
+    // On iOS, request ATT permission BEFORE initializing AdMob so the prompt
+    // appears at first launch. requestTrackingAuthorization=true triggers it.
     await AdMob.initialize({
       initializeForTesting:false,
-      requestTrackingAuthorization:false
+      requestTrackingAuthorization:_isIOS()
     });
     // Prepare rewarded ad
     await AdMob.prepareRewardVideoAd({
-      adId:'ca-app-pub-1164170950110129/7243043308',
+      adId:REWARDED_ID(),
       isTesting:false
     });
     // Prepare interstitial
     await AdMob.prepareInterstitial({
-      adId:'ca-app-pub-1164170950110129/6672197661',
+      adId:INTERSTITIAL_ID(),
       isTesting:false
     });
     // Listen for reward
@@ -400,10 +413,10 @@ async function initAdMob(){
     });
     // Re-prepare after close
     AdMob.addListener('onRewardedVideoAdDismissed',()=>{
-      AdMob.prepareRewardVideoAd({adId:'ca-app-pub-1164170950110129/7243043308',isTesting:false}).catch(()=>{});
+      AdMob.prepareRewardVideoAd({adId:REWARDED_ID(),isTesting:false}).catch(()=>{});
     });
     AdMob.addListener('onInterstitialAdDismissed',()=>{
-      AdMob.prepareInterstitial({adId:'ca-app-pub-1164170950110129/6672197661',isTesting:false}).catch(()=>{});
+      AdMob.prepareInterstitial({adId:INTERSTITIAL_ID(),isTesting:false}).catch(()=>{});
     });
     admobReady=true;
   }catch(e){/* browser/no AdMob — silently continue */}
