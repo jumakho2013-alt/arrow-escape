@@ -1749,9 +1749,13 @@ function drawSettings(){
   drawBg();
   txtP(t('settings'),W/2,50,22,TH.text);
 
-  // If language picker is open, suppress taps on underlying buttons
+  // Snapshot whether picker was already open ENTERING this frame.
+  // If it was, suppress taps on underlying buttons and allow the overlay to consume tap.
+  // If it wasn't (i.e. it gets opened this frame by the Language button), the
+  // tap is already consumed by drawBtn and must NOT be replayed into the overlay.
+  const pickerWasOpen=langPickerOpen;
   const savedTapped=tapped;
-  if(langPickerOpen)tapped=false;
+  if(pickerWasOpen)tapped=false;
 
   // Language — opens picker popup on tap
   const curLang=LANGS.find(l=>l.code===lang)||LANGS[0];
@@ -1799,8 +1803,10 @@ function drawSettings(){
 
   if(drawBtn('← '+t('back'),W/2,H-60,140,38)){resetConfirm=false;goto('menu')}
 
-  // Restore tap so the picker overlay can consume it
-  if(langPickerOpen)tapped=savedTapped;
+  // Only restore tap if picker was ALREADY open entering this frame.
+  // If it was just opened now, the opening tap has already been consumed
+  // by the Language button and must not leak into the overlay.
+  if(pickerWasOpen)tapped=savedTapped;
 
   // Language picker popup — rendered LAST so it overlays everything
   if(langPickerOpen){
