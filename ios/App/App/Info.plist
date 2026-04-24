@@ -48,7 +48,7 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<string>ca-app-pub-1164170950110129~3554915435</string>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>Your data will be used to deliver personalized ads to you.</string>
 	<key>SKAdNetworkItems</key>
