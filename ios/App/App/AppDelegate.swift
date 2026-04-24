@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import AVFoundation
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,7 +8,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Configure audio session for GAME SOUND EFFECTS, not media playback.
+        //  - .ambient: mixes with other audio (don't pause user's music)
+        //  - .mixWithOthers: explicit mix flag
+        // Without this, iOS treats HTML5 <audio> playback as a media app
+        // and shows the app on the lock-screen Now Playing widget — wrong
+        // for a puzzle game with short SFX. Also makes audio path lighter.
+        do {
+            try AVAudioSession.sharedInstance().setCategory(
+                .ambient,
+                mode: .default,
+                options: [.mixWithOthers]
+            )
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            // Non-fatal — silent app fallback
+        }
         return true
     }
 

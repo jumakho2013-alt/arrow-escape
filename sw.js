@@ -1,5 +1,8 @@
 // Service Worker for Stray Arrows — enables offline play + app store packaging
-const CACHE_NAME = 'stray-arrows-v1';
+// Bump on each release so old caches are invalidated and the new HTML/JS
+// actually takes effect. If you forget, users see a stale build until they
+// manually clear data.
+const CACHE_NAME = 'stray-arrows-v1.0.6';
 const ASSETS = ['/', '/index.html'];
 
 self.addEventListener('install', e => {

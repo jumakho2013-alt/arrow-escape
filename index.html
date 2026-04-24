@@ -4,7 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Stray Arrows</title>
-<meta name="theme-color" content="#1a1a2e" id="themeColorMeta">
+<!-- Initialize theme-color synchronously before paint, based on the stored
+     theme preference, so the status bar doesn't flash dark→light (or vice
+     versa) for one frame during app launch. -->
+<meta name="theme-color" content="#f5f2ed" id="themeColorMeta">
+<script>
+(function(){
+  try{
+    var dark=localStorage.getItem('ae_theme')==='dark';
+    var col=dark?'#1a1a2e':'#f5f2ed';
+    var m=document.getElementById('themeColorMeta');if(m)m.content=col;
+    document.documentElement.style.colorScheme=dark?'dark':'light';
+  }catch(e){}
+})();
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Stray Arrows">
@@ -14,16 +27,53 @@
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;touch-action:none}
-html,body{width:100%;height:100%;overflow:hidden;display:flex;justify-content:center;align-items:center;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Nunito',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
-body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
-body.light{background:#f5f2ed;background-image:radial-gradient(at 20% 0%,#ece7dc 0%,#f5f2ed 55%)}
-body.dark{background:#1a1a2e;background-image:radial-gradient(at 20% 0%,#252545 0%,#1a1a2e 55%)}
+html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;display:flex;justify-content:center;align-items:center;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Nunito',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+/* No safe-area padding — canvas extends edge-to-edge under the notch.
+   Body bg matches canvas drawBg() top color so any letterbox area (when the
+   screen aspect ratio differs from 390:844) blends with the gradient. */
+body.light{background:#faf7f1}
+body.dark{background:#15152a}
 canvas{display:block}
 </style>
 </head>
 <body class="light">
 <canvas id="c"></canvas>
 <script>
+// Surface any uncaught error visibly — without this a JS error gives a blank
+// white screen with no clue. Persists in localStorage for post-mortem.
+window.addEventListener('error', function(e){
+  try{
+    localStorage.setItem('ae_lasterror', (e.message||'?')+' @ '+(e.filename||'?')+':'+(e.lineno||'?')+':'+(e.colno||'?'));
+    var div=document.createElement('div');
+    div.style.cssText='position:fixed;top:0;left:0;right:0;background:#c00;color:#fff;font:12px monospace;padding:10px;z-index:99999;white-space:pre-wrap';
+    div.textContent='JS ERROR: '+(e.message||'?')+'\n@ '+(e.filename||'?')+':'+(e.lineno||'?');
+    document.body.appendChild(div);
+  }catch(_){}
+});
+window.addEventListener('unhandledrejection', function(e){
+  try{ localStorage.setItem('ae_lastreject', String(e.reason||'?')); }catch(_){}
+});
+</script>
+<script>
+// Polyfill CanvasRenderingContext2D.roundRect for iOS 15.x and 16.0–16.3
+// (only available natively in 16.4+). Without this the app instantly throws
+// "X.roundRect is not a function" → white screen on older devices. Apple
+// still allows iOS 15 in the App Store, so we ship the polyfill.
+if(!CanvasRenderingContext2D.prototype.roundRect){
+  CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+    if(typeof r==='number')r=[r,r,r,r];
+    else if(r.length===1)r=[r[0],r[0],r[0],r[0]];
+    else if(r.length===2)r=[r[0],r[1],r[0],r[1]];
+    const [tl,tr,br,bl]=r;
+    this.moveTo(x+tl,y);
+    this.arcTo(x+w,y,   x+w,y+h, tr);
+    this.arcTo(x+w,y+h, x,  y+h, br);
+    this.arcTo(x,  y+h, x,  y,   bl);
+    this.arcTo(x,  y,   x+w,y,   tl);
+    this.closePath();
+    return this;
+  };
+}
 // Wrap everything in IIFE to prevent single-letter global variable conflicts
 // with browser extensions (crypto wallets, ad blockers, etc.)
 (function(){
@@ -32,6 +82,9 @@ canvas{display:block}
 // ================================================================
 const C=document.getElementById('c'),X=C.getContext('2d');
 const W=390,H=844;
+// Single source of truth for the displayed app version. Bump alongside
+// CFBundleShortVersionString in ios/App/App.xcodeproj/project.pbxproj.
+const APP_VERSION='v1.0.6';
 const PI=Math.PI,TAU=PI*2,sin=Math.sin,cos=Math.cos,abs=Math.abs,floor=Math.floor,min=Math.min,max=Math.max,sqrt=Math.sqrt;
 const rnd=(a=0,b=1)=>Math.random()*(b-a)+a;
 const rndI=(a,b)=>floor(rnd(a,b+1));
@@ -41,9 +94,33 @@ const lrp=(a,b,t)=>a+(b-a)*t;
 // ================================================================
 //  THEME
 // ================================================================
+// Cache invalidation flags + glass cache — MUST be declared before
+// applyTheme/resize run (they flip the flag and clear the cache). Both are
+// `let`/`const` so they live in temporal dead zone before this point — the
+// previous build crashed because `_clearGlassCache` was hoisted (function
+// decl) but `_glassCache` (const) was not, so calling it at startup threw.
+let _bgCacheDirty=true;
+const _glassCache=new Map();
 let darkMode=localStorage.getItem('ae_theme')==='dark';
+// prefers-reduced-motion: when true, code paths that draw decorative motion
+// (background floating arrows, hint pulse, confetti, slide-in animations)
+// either skip or use a reduced variant. Game-essential motion (arrow swoosh
+// when escaping, completion fade) still runs — without those the game state
+// becomes unreadable.
+let reducedMotion=false;
+try{
+  const _rm=matchMedia('(prefers-reduced-motion: reduce)');
+  reducedMotion=_rm.matches;
+  _rm.addEventListener?.('change',e=>{reducedMotion=e.matches});
+}catch(e){}
 function applyTheme(){
   document.body.className=darkMode?'dark':'light';
+  // color-scheme tells the browser to render native UI (scrollbars, form
+  // inputs, text selection, cursor) in the matching theme. Prevents stray
+  // light scrollbars in dark mode, etc.
+  document.documentElement.style.colorScheme=darkMode?'dark':'light';
+  _bgCacheDirty=true;
+  if(typeof _clearGlassCache==='function')_clearGlassCache();
   // Match status bar / notch / nav bar to app theme
   const col=darkMode?'#1a1a2e':'#f5f2ed';
   const m=document.getElementById('themeColorMeta');
@@ -61,14 +138,24 @@ function applyTheme(){
 }
 applyTheme();
 
+// Theme palette. Two MUTUALLY-CONSISTENT modes — light has cream bg + dark
+// ink-on-paper buttons; dark has navy bg + lifted dark-grey buttons with
+// light text (like iOS dark mode). No mixing of light buttons on dark bg.
 const TH={
-  get bg(){return darkMode?'#1a1a2e':'#f5f2ed'},
+  get bg(){return darkMode?'#15152a':'#f5f2ed'},
   get surface(){return darkMode?'#252540':'#ffffff'},
-  get border(){return darkMode?'rgba(255,255,255,.06)':'rgba(0,0,0,.06)'},
-  get text(){return darkMode?'#e0ddd5':'#2a2a2a'},
-  get textSec(){return darkMode?'#888898':'#888888'},
-  get textDim(){return darkMode?'rgba(255,255,255,.25)':'rgba(0,0,0,.2)'},
-  get accent(){return darkMode?'#7a9cc8':'#5c7caa'},
+  get border(){return darkMode?'rgba(255,255,255,.10)':'rgba(0,0,0,.08)'},
+  // Screen-level text (titles, stats labels)
+  get text(){return darkMode?'#f0eee8':'#2a2a2a'},
+  get textSec(){return darkMode?'#a8a8b8':'#888888'},
+  get textDim(){return darkMode?'rgba(255,255,255,.35)':'rgba(0,0,0,.2)'},
+  // Button-local: text always contrasts the button bg (dark btn → light text)
+  get btnText(){return darkMode?'#f0eee8':'#2a2a2a'},
+  get btnTextSec(){return darkMode?'#a0a0b0':'#6a6a6a'},
+  // Warm amber accent — matches the cream "paper" bg + earth-tone palette
+  // (per ui-ux-pro-max design system: Bakery/Cafe palette). Replaces the
+  // cold blue-grey which clashed against warm background.
+  get accent(){return darkMode?'#e2b35a':'#c89030'},
   get success(){return'#6aaa7a'},
   get warning(){return'#d4956a'},
   get star(){return'#d4aa4a'},
@@ -76,9 +163,11 @@ const TH={
   get arrowBlock(){return darkMode?'#e08080':'#cc4444'},
   get arrowShadow(){return darkMode?'rgba(0,0,0,.3)':'rgba(0,0,0,.08)'},
   get gridLine(){return darkMode?'rgba(255,255,255,.04)':'rgba(0,0,0,.04)'},
-  get cardBg(){return darkMode?'rgba(255,255,255,.04)':'rgba(0,0,0,.03)'},
-  get btnBg(){return darkMode?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)'},
-  get btnHover(){return darkMode?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)'},
+  get cardBg(){return darkMode?'rgba(255,255,255,.05)':'rgba(0,0,0,.03)'},
+  // Buttons: lifted surface above bg (slightly lighter in dark, slightly
+  // darker in light) — gives a soft "card" feel without any glass overlay.
+  get btnBg(){return darkMode?'rgba(255,255,255,.08)':'rgba(255,255,255,.7)'},
+  get btnHover(){return darkMode?'rgba(255,255,255,.14)':'rgba(255,255,255,.95)'},
 };
 
 // ================================================================
@@ -96,48 +185,113 @@ const LANGS=[
   {code:'ja',name:'日本語'},
 ];
 const STR={
-  en:{title1:'STRAY',title2:'ARROWS',tagline:'puzzle game',play:'PLAY',levels:'LEVELS',daily:'DAILY',weekly:'WEEKLY',stats:'STATS',achievements:'ACHIEVEMENTS',settings:'SETTINGS',sound:'Sound',theme:'Theme',themeDark:'Dark',themeLight:'Light',language:'Language',removeAds:'Remove Ads',watchAd:'Watch Ad',coins:'Coins',resetProgress:'Reset Progress',areYouSure:'Are you sure?',yesReset:'YES, RESET',cancel:'CANCEL',back:'BACK',hint:'HINT',skip:'SKIP',level:'LEVEL',stars:'STARS',streak:'STREAK',trophy:'TROPHY',on:'ON',off:'OFF',adsRemoved:'Ads removed ★',nextLevel:'NEXT LEVEL',replay:'REPLAY',home:'HOME',gameOver:'GAME OVER',outOfHearts:'You ran out of hearts',retry:'RETRY',continueBtn:'CONTINUE',restorePurchases:'Restore Purchases'},
-  ru:{title1:'STRAY',title2:'ARROWS',tagline:'головоломка',play:'ИГРАТЬ',levels:'УРОВНИ',daily:'ДЕНЬ',weekly:'НЕДЕЛЯ',stats:'СТАТЫ',achievements:'ДОСТИЖЕНИЯ',settings:'НАСТРОЙКИ',sound:'Звук',theme:'Тема',themeDark:'Тёмная',themeLight:'Светлая',language:'Язык',removeAds:'Убрать рекламу',watchAd:'Смотреть рекламу',coins:'монет',resetProgress:'Сбросить прогресс',areYouSure:'Вы уверены?',yesReset:'ДА, СБРОСИТЬ',cancel:'ОТМЕНА',back:'НАЗАД',hint:'ПОДСК',skip:'ПРОПУСК',level:'УРОВ',stars:'ЗВЁЗД',streak:'СЕРИЯ',trophy:'КУБОК',on:'ВКЛ',off:'ВЫКЛ',adsRemoved:'Реклама убрана ★',nextLevel:'СЛЕД. УРОВЕНЬ',replay:'ЗАНОВО',home:'ДОМОЙ',gameOver:'ИГРА ОКОНЧЕНА',outOfHearts:'Закончились жизни',retry:'ПОВТОР',continueBtn:'ПРОДОЛЖИТЬ',restorePurchases:'Восстановить покупки'},
-  es:{title1:'STRAY',title2:'ARROWS',tagline:'juego de puzzle',play:'JUGAR',levels:'NIVELES',daily:'DIARIO',weekly:'SEMANAL',stats:'STATS',achievements:'LOGROS',settings:'AJUSTES',sound:'Sonido',theme:'Tema',themeDark:'Oscuro',themeLight:'Claro',language:'Idioma',removeAds:'Quitar anuncios',watchAd:'Ver anuncio',coins:'monedas',resetProgress:'Reiniciar',areYouSure:'¿Estás seguro?',yesReset:'SÍ, REINICIAR',cancel:'CANCELAR',back:'ATRÁS',hint:'PISTA',skip:'SALTAR',level:'NIVEL',stars:'ESTR',streak:'RACHA',trophy:'COPA',on:'ON',off:'OFF',adsRemoved:'Anuncios quitados ★',nextLevel:'SIGUIENTE',replay:'REPETIR',home:'INICIO',gameOver:'FIN',outOfHearts:'Sin vidas',retry:'REINTENTAR',continueBtn:'CONTINUAR',restorePurchases:'Restaurar compras'},
-  de:{title1:'STRAY',title2:'ARROWS',tagline:'Puzzlespiel',play:'SPIELEN',levels:'LEVEL',daily:'TAG',weekly:'WOCHE',stats:'STATS',achievements:'ERFOLGE',settings:'EINSTELL.',sound:'Ton',theme:'Theme',themeDark:'Dunkel',themeLight:'Hell',language:'Sprache',removeAds:'Werbung entfernen',watchAd:'Werbung ansehen',coins:'Münzen',resetProgress:'Zurücksetzen',areYouSure:'Sicher?',yesReset:'JA, RESET',cancel:'ABBR.',back:'ZURÜCK',hint:'TIPP',skip:'ÜBERSPR.',level:'LVL',stars:'STERNE',streak:'SERIE',trophy:'POKAL',on:'AN',off:'AUS',adsRemoved:'Werbung entfernt ★',nextLevel:'WEITER',replay:'NEU',home:'HOME',gameOver:'GAME OVER',outOfHearts:'Keine Herzen mehr',retry:'NEU',continueBtn:'WEITER',restorePurchases:'Käufe wiederherst.'},
-  fr:{title1:'STRAY',title2:'ARROWS',tagline:'jeu de puzzle',play:'JOUER',levels:'NIVEAUX',daily:'JOUR',weekly:'SEMAINE',stats:'STATS',achievements:'SUCCÈS',settings:'PARAM.',sound:'Son',theme:'Thème',themeDark:'Sombre',themeLight:'Clair',language:'Langue',removeAds:'Retirer pubs',watchAd:'Voir pub',coins:'pièces',resetProgress:'Réinitialiser',areYouSure:'Sûr ?',yesReset:'OUI, RESET',cancel:'ANNULER',back:'RETOUR',hint:'INDICE',skip:'PASSER',level:'NIV',stars:'ÉTOILES',streak:'SÉRIE',trophy:'COUPE',on:'ON',off:'OFF',adsRemoved:'Pubs retirées ★',nextLevel:'SUIVANT',replay:'REJOUER',home:'ACCUEIL',gameOver:'PERDU',outOfHearts:'Plus de vies',retry:'REJOUER',continueBtn:'CONTINUER',restorePurchases:'Restaurer achats'},
-  pt:{title1:'STRAY',title2:'ARROWS',tagline:'jogo de puzzle',play:'JOGAR',levels:'NÍVEIS',daily:'DIA',weekly:'SEMANA',stats:'STATS',achievements:'CONQUISTAS',settings:'AJUSTES',sound:'Som',theme:'Tema',themeDark:'Escuro',themeLight:'Claro',language:'Idioma',removeAds:'Remover anúncios',watchAd:'Ver anúncio',coins:'moedas',resetProgress:'Resetar',areYouSure:'Tem certeza?',yesReset:'SIM, RESET',cancel:'CANCELAR',back:'VOLTAR',hint:'DICA',skip:'PULAR',level:'NÍV',stars:'ESTR',streak:'SEQ',trophy:'TROFÉU',on:'ON',off:'OFF',adsRemoved:'Anúncios removidos ★',nextLevel:'PRÓXIMO',replay:'REPETIR',home:'INÍCIO',gameOver:'FIM',outOfHearts:'Sem vidas',retry:'TENTAR',continueBtn:'CONTINUAR',restorePurchases:'Restaurar compras'},
-  it:{title1:'STRAY',title2:'ARROWS',tagline:'gioco di puzzle',play:'GIOCA',levels:'LIVELLI',daily:'GIORNO',weekly:'SETT.',stats:'STATS',achievements:'TROFEI',settings:'IMPOST.',sound:'Audio',theme:'Tema',themeDark:'Scuro',themeLight:'Chiaro',language:'Lingua',removeAds:'Rimuovi pubblicità',watchAd:'Guarda pub',coins:'monete',resetProgress:'Reset',areYouSure:'Sei sicuro?',yesReset:'SÌ, RESET',cancel:'ANNULLA',back:'INDIETRO',hint:'AIUTO',skip:'SALTA',level:'LV',stars:'STELLE',streak:'SERIE',trophy:'COPPA',on:'ON',off:'OFF',adsRemoved:'Pubblicità rimossa ★',nextLevel:'PROSSIMO',replay:'RIGIOCA',home:'HOME',gameOver:'FINE',outOfHearts:'Niente vite',retry:'RIPROVA',continueBtn:'CONTINUA',restorePurchases:'Ripristina acquisti'},
-  tr:{title1:'STRAY',title2:'ARROWS',tagline:'bulmaca oyunu',play:'OYNA',levels:'BÖLÜMLER',daily:'GÜNLÜK',weekly:'HAFTALIK',stats:'STATS',achievements:'BAŞARIMLAR',settings:'AYARLAR',sound:'Ses',theme:'Tema',themeDark:'Koyu',themeLight:'Açık',language:'Dil',removeAds:'Reklamları kaldır',watchAd:'Reklam izle',coins:'jeton',resetProgress:'Sıfırla',areYouSure:'Emin misin?',yesReset:'EVET, SIFIRLA',cancel:'İPTAL',back:'GERİ',hint:'İPUCU',skip:'ATLA',level:'LV',stars:'YILDIZ',streak:'SERİ',trophy:'KUPA',on:'AÇIK',off:'KAPALI',adsRemoved:'Reklamlar kaldırıldı ★',nextLevel:'SONRAKİ',replay:'TEKRAR',home:'ANA',gameOver:'BİTTİ',outOfHearts:'Can kalmadı',retry:'TEKRAR',continueBtn:'DEVAM',restorePurchases:'Satın alımları geri yükle'},
-  ja:{title1:'STRAY',title2:'ARROWS',tagline:'パズルゲーム',play:'プレイ',levels:'レベル',daily:'デイリー',weekly:'ウィークリー',stats:'統計',achievements:'実績',settings:'設定',sound:'サウンド',theme:'テーマ',themeDark:'ダーク',themeLight:'ライト',language:'言語',removeAds:'広告を削除',watchAd:'広告を見る',coins:'コイン',resetProgress:'リセット',areYouSure:'よろしいですか?',yesReset:'はい、リセット',cancel:'キャンセル',back:'戻る',hint:'ヒント',skip:'スキップ',level:'LV',stars:'★',streak:'連続',trophy:'トロフィー',on:'オン',off:'オフ',adsRemoved:'広告削除済み ★',nextLevel:'次へ',replay:'リプレイ',home:'ホーム',gameOver:'ゲームオーバー',outOfHearts:'ライフ切れ',retry:'リトライ',continueBtn:'続ける',restorePurchases:'購入を復元'},
+  en:{title1:'STRAY',title2:'ARROWS',tagline:'puzzle game',play:'PLAY',levels:'LEVELS',daily:'DAILY',weekly:'WEEKLY',stats:'STATS',achievements:'ACHIEVEMENTS',settings:'SETTINGS',sound:'Sound',theme:'Theme',themeDark:'Dark',themeLight:'Light',language:'Language',watchAd:'Watch Ad',coins:'Coins',resetProgress:'Reset Progress',areYouSure:'Are you sure?',yesReset:'YES, RESET',cancel:'CANCEL',back:'BACK',hint:'HINT',skip:'SKIP',level:'LEVEL',stars:'STARS',streak:'STREAK',trophy:'TROPHY',on:'ON',off:'OFF',nextLevel:'NEXT LEVEL',replay:'REPLAY',home:'HOME',gameOver:'GAME OVER',outOfHearts:'You ran out of hearts',retry:'RETRY',continueBtn:'CONTINUE',},
+  ru:{title1:'STRAY',title2:'ARROWS',tagline:'головоломка',play:'ИГРАТЬ',levels:'УРОВНИ',daily:'ДЕНЬ',weekly:'НЕДЕЛЯ',stats:'СТАТЫ',achievements:'ДОСТИЖЕНИЯ',settings:'НАСТРОЙКИ',sound:'Звук',theme:'Тема',themeDark:'Тёмная',themeLight:'Светлая',language:'Язык',watchAd:'Смотреть рекламу',coins:'монет',resetProgress:'Сбросить прогресс',areYouSure:'Вы уверены?',yesReset:'ДА, СБРОСИТЬ',cancel:'ОТМЕНА',back:'НАЗАД',hint:'ПОДСКАЗКА',skip:'ПРОПУСК',level:'УРОВ',stars:'ЗВЁЗД',streak:'СЕРИЯ',trophy:'КУБОК',on:'ВКЛ',off:'ВЫКЛ',nextLevel:'СЛЕД. УРОВЕНЬ',replay:'ЗАНОВО',home:'ДОМОЙ',gameOver:'ИГРА ОКОНЧЕНА',outOfHearts:'Закончились жизни',retry:'ПОВТОР',continueBtn:'ПРОДОЛЖИТЬ',},
+  es:{title1:'STRAY',title2:'ARROWS',tagline:'juego de puzzle',play:'JUGAR',levels:'NIVELES',daily:'DIARIO',weekly:'SEMANAL',stats:'STATS',achievements:'LOGROS',settings:'AJUSTES',sound:'Sonido',theme:'Tema',themeDark:'Oscuro',themeLight:'Claro',language:'Idioma',watchAd:'Ver anuncio',coins:'monedas',resetProgress:'Reiniciar',areYouSure:'¿Estás seguro?',yesReset:'SÍ, REINICIAR',cancel:'CANCELAR',back:'ATRÁS',hint:'PISTA',skip:'SALTAR',level:'NIVEL',stars:'ESTR',streak:'RACHA',trophy:'COPA',on:'ON',off:'OFF',nextLevel:'SIGUIENTE',replay:'REPETIR',home:'INICIO',gameOver:'FIN',outOfHearts:'Sin vidas',retry:'REINTENTAR',continueBtn:'CONTINUAR',},
+  de:{title1:'STRAY',title2:'ARROWS',tagline:'Puzzlespiel',play:'SPIELEN',levels:'LEVEL',daily:'TAG',weekly:'WOCHE',stats:'STATS',achievements:'ERFOLGE',settings:'EINSTELL.',sound:'Ton',theme:'Theme',themeDark:'Dunkel',themeLight:'Hell',language:'Sprache',watchAd:'Werbung ansehen',coins:'Münzen',resetProgress:'Zurücksetzen',areYouSure:'Sicher?',yesReset:'JA, RESET',cancel:'ABBR.',back:'ZURÜCK',hint:'TIPP',skip:'ÜBERSPR.',level:'LVL',stars:'STERNE',streak:'SERIE',trophy:'POKAL',on:'AN',off:'AUS',nextLevel:'WEITER',replay:'NEU',home:'HOME',gameOver:'GAME OVER',outOfHearts:'Keine Herzen mehr',retry:'NEU',continueBtn:'WEITER',},
+  fr:{title1:'STRAY',title2:'ARROWS',tagline:'jeu de puzzle',play:'JOUER',levels:'NIVEAUX',daily:'JOUR',weekly:'SEMAINE',stats:'STATS',achievements:'SUCCÈS',settings:'PARAM.',sound:'Son',theme:'Thème',themeDark:'Sombre',themeLight:'Clair',language:'Langue',watchAd:'Voir pub',coins:'pièces',resetProgress:'Réinitialiser',areYouSure:'Sûr ?',yesReset:'OUI, RESET',cancel:'ANNULER',back:'RETOUR',hint:'INDICE',skip:'PASSER',level:'NIV',stars:'ÉTOILES',streak:'SÉRIE',trophy:'COUPE',on:'ON',off:'OFF',nextLevel:'SUIVANT',replay:'REJOUER',home:'ACCUEIL',gameOver:'PERDU',outOfHearts:'Plus de vies',retry:'REJOUER',continueBtn:'CONTINUER',},
+  pt:{title1:'STRAY',title2:'ARROWS',tagline:'jogo de puzzle',play:'JOGAR',levels:'NÍVEIS',daily:'DIA',weekly:'SEMANA',stats:'STATS',achievements:'CONQUISTAS',settings:'AJUSTES',sound:'Som',theme:'Tema',themeDark:'Escuro',themeLight:'Claro',language:'Idioma',watchAd:'Ver anúncio',coins:'moedas',resetProgress:'Resetar',areYouSure:'Tem certeza?',yesReset:'SIM, RESET',cancel:'CANCELAR',back:'VOLTAR',hint:'DICA',skip:'PULAR',level:'NÍV',stars:'ESTR',streak:'SEQ',trophy:'TROFÉU',on:'ON',off:'OFF',nextLevel:'PRÓXIMO',replay:'REPETIR',home:'INÍCIO',gameOver:'FIM',outOfHearts:'Sem vidas',retry:'TENTAR',continueBtn:'CONTINUAR',},
+  it:{title1:'STRAY',title2:'ARROWS',tagline:'gioco di puzzle',play:'GIOCA',levels:'LIVELLI',daily:'GIORNO',weekly:'SETT.',stats:'STATS',achievements:'TROFEI',settings:'IMPOST.',sound:'Audio',theme:'Tema',themeDark:'Scuro',themeLight:'Chiaro',language:'Lingua',watchAd:'Guarda pub',coins:'monete',resetProgress:'Reset',areYouSure:'Sei sicuro?',yesReset:'SÌ, RESET',cancel:'ANNULLA',back:'INDIETRO',hint:'AIUTO',skip:'SALTA',level:'LV',stars:'STELLE',streak:'SERIE',trophy:'COPPA',on:'ON',off:'OFF',nextLevel:'PROSSIMO',replay:'RIGIOCA',home:'HOME',gameOver:'FINE',outOfHearts:'Niente vite',retry:'RIPROVA',continueBtn:'CONTINUA',},
+  tr:{title1:'STRAY',title2:'ARROWS',tagline:'bulmaca oyunu',play:'OYNA',levels:'BÖLÜMLER',daily:'GÜNLÜK',weekly:'HAFTALIK',stats:'STATS',achievements:'BAŞARIMLAR',settings:'AYARLAR',sound:'Ses',theme:'Tema',themeDark:'Koyu',themeLight:'Açık',language:'Dil',watchAd:'Reklam izle',coins:'jeton',resetProgress:'Sıfırla',areYouSure:'Emin misin?',yesReset:'EVET, SIFIRLA',cancel:'İPTAL',back:'GERİ',hint:'İPUCU',skip:'ATLA',level:'LV',stars:'YILDIZ',streak:'SERİ',trophy:'KUPA',on:'AÇIK',off:'KAPALI',nextLevel:'SONRAKİ',replay:'TEKRAR',home:'ANA',gameOver:'BİTTİ',outOfHearts:'Can kalmadı',retry:'TEKRAR',continueBtn:'DEVAM',},
+  ja:{title1:'STRAY',title2:'ARROWS',tagline:'パズルゲーム',play:'プレイ',levels:'レベル',daily:'デイリー',weekly:'ウィークリー',stats:'統計',achievements:'実績',settings:'設定',sound:'サウンド',theme:'テーマ',themeDark:'ダーク',themeLight:'ライト',language:'言語',watchAd:'広告を見る',coins:'コイン',resetProgress:'リセット',areYouSure:'よろしいですか?',yesReset:'はい、リセット',cancel:'キャンセル',back:'戻る',hint:'ヒント',skip:'スキップ',level:'LV',stars:'★',streak:'連続',trophy:'トロフィー',on:'オン',off:'オフ',nextLevel:'次へ',replay:'リプレイ',home:'ホーム',gameOver:'ゲームオーバー',outOfHearts:'ライフ切れ',retry:'リトライ',continueBtn:'続ける',},
 };
 let lang=localStorage.getItem('ae_lang')||(navigator.language||'en').slice(0,2);
 if(!STR[lang])lang='en';
 function t(k){return (STR[lang]&&STR[lang][k])||STR.en[k]||k}
+let langPickerOpen=false; // controls the language-selection modal overlay
+let inputLocked=false; // true during 500ms transition windows (gameover/complete)
 
 // ================================================================
-//  DPR + RESIZE
+//  DPR + RESIZE — canvas fills the FULL viewport (including under notch).
+//  We render at logical W×H but stretch the bg to cover any letterbox so
+//  the screen never shows phone chrome behind the canvas.
+//  safeTop/safeBottom are exposed in logical pixels for UI offset.
 // ================================================================
 let dpr=1;
+let safeTop=0,safeBottom=0,safeLeft=0,safeRight=0;
+let scaleY=1; // CSS px per logical px on the Y axis (used to convert env() values)
+function _readSafeArea(){
+  try{
+    let probe=document.getElementById('_sap');
+    if(!probe){
+      probe=document.createElement('div');
+      probe.id='_sap';
+      probe.style.cssText='position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+      document.body.appendChild(probe);
+    }
+    const cs=getComputedStyle(probe);
+    return {
+      t:parseFloat(cs.paddingTop)||0,
+      r:parseFloat(cs.paddingRight)||0,
+      b:parseFloat(cs.paddingBottom)||0,
+      l:parseFloat(cs.paddingLeft)||0
+    };
+  }catch(e){return {t:0,r:0,b:0,l:0}}
+}
 function resize(){
   dpr=window.devicePixelRatio||1;
-  const r=W/H;let cw=innerWidth,ch=innerHeight;
-  if(cw/ch>r)cw=ch*r;else ch=cw/r;
+  const cw=innerWidth||W,ch=innerHeight||H;
   C.width=W*dpr;C.height=H*dpr;
   C.style.width=cw+'px';C.style.height=ch+'px';
   X.setTransform(dpr,0,0,dpr,0,0);
+  scaleY=ch/H||1;
+  const sa=_readSafeArea();
+  safeTop   =sa.t/scaleY;
+  safeBottom=sa.b/scaleY;
+  safeLeft  =sa.l/((cw/W)||1);
+  safeRight =sa.r/((cw/W)||1);
+  _bgCacheDirty=true;
 }
 resize();addEventListener('resize',resize);
 
 // ================================================================
-//  AUDIO — MP3 sound effects at 70% volume
+//  AUDIO — Web Audio API (NOT HTML5 <audio>).
+// iOS WKWebView treats any HTMLAudioElement as media playback: it hijacks
+// AVAudioSession, registers the app on the lock-screen Now Playing widget,
+// and routes playback through the codec path (high latency). Web Audio is
+// classified as in-app sound, plays through the ambient/mixWithOthers
+// category set in AppDelegate, has near-zero latency, and never touches
+// Now Playing. The AVAudioSession config in AppDelegate.swift only actually
+// takes effect once we stop instantiating <audio>.
 // ================================================================
 let sndOn=localStorage.getItem('ae_sound')!=='0';
 const SND_VOL=0.7;
-function initA(){} // kept for compatibility with existing initA() calls
+let audioCtx=null,masterGain=null;
+const sndBuf={}; // name -> AudioBuffer (decoded)
 
-// Preload all sound effects
-const sndCache={};
+function initA(){
+  // Must be called from a user-gesture handler on iOS to unlock the context.
+  if(audioCtx){
+    if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
+    return;
+  }
+  try{
+    const Ctx=window.AudioContext||window.webkitAudioContext;
+    if(!Ctx)return;
+    audioCtx=new Ctx();
+    masterGain=audioCtx.createGain();
+    masterGain.gain.value=SND_VOL;
+    masterGain.connect(audioCtx.destination);
+    // Decode any buffers fetched before the context existed.
+    for(const item of _pendingDecode)_decodeInto(item.name,item.buf);
+    _pendingDecode.length=0;
+  }catch(e){}
+}
+
+// Fetch at startup so bytes are in memory by the time the user taps.
+// Decoding waits for the context (created on first tap).
+const _pendingDecode=[];
+function _decodeInto(name,buf){
+  if(!audioCtx)return;
+  // decodeAudioData on iOS Safari needs a fresh copy because the ArrayBuffer
+  // is detached after the call. We already hold one reference so just pass it.
+  audioCtx.decodeAudioData(buf,b=>{sndBuf[name]=b},()=>{});
+}
 function loadSnd(name,src){
-  const a=new Audio(src);
-  a.preload='auto';
-  a.volume=SND_VOL;
-  sndCache[name]=a;
+  fetch(src).then(r=>r.arrayBuffer()).then(buf=>{
+    if(audioCtx)_decodeInto(name,buf);
+    else _pendingDecode.push({name,buf});
+  }).catch(()=>{});
 }
 loadSnd('swoosh','sounds/whoosh-effect.mp3');
 loadSnd('tap','sounds/click sound.mp3');
@@ -148,13 +302,20 @@ loadSnd('coin','sounds/coin reward.mp3');
 loadSnd('achievement','sounds/coin reward.mp3');
 
 function playSnd(name){
-  if(!sndOn)return;
-  const a=sndCache[name];
-  if(!a)return;
-  // Clone to allow overlapping plays
-  const c=a.cloneNode();
-  c.volume=SND_VOL;
-  c.play().catch(()=>{});
+  if(!sndOn||!audioCtx||!sndBuf[name])return;
+  const go=()=>{
+    try{
+      const src=audioCtx.createBufferSource();
+      src.buffer=sndBuf[name];
+      src.connect(masterGain);
+      src.start(0);
+    }catch(e){}
+  };
+  // If iOS suspended the context (app backgrounded, inactivity), resume is
+  // async — we must wait for it to complete before scheduling the buffer,
+  // otherwise the first post-toggle play silently drops.
+  if(audioCtx.state==='suspended')audioCtx.resume().then(go).catch(()=>{});
+  else go();
 }
 
 const sfx={
@@ -188,9 +349,12 @@ function haptic(ms){try{navigator.vibrate(ms)}catch(e){}}
 // ================================================================
 //  GAME STATE
 // ================================================================
+// Parse JSON from localStorage, fall back to {} if missing or corrupted —
+// hand-edited or partially-written values would otherwise crash app startup.
+function _safeJSON(k){try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}}
 let S='menu'; // menu|play|complete|levels|settings|daily|challenge
 let level=+localStorage.getItem('ae_level')||1;
-let stars=JSON.parse(localStorage.getItem('ae_stars')||'{}');
+let stars=_safeJSON('ae_stars');
 let totalStars=Object.values(stars).reduce((a,b)=>a+b,0);
 // maxLevel = highest level ever reached. Recover from stars if ae_maxlevel missing.
 let maxLevel=+localStorage.getItem('ae_maxlevel')||level;
@@ -226,7 +390,7 @@ let isWeekly=false; // true when playing the weekly challenge
 let dailySeed=0;
 let totalPlayTime=+localStorage.getItem('ae_playtime')||0;
 let floaters=[]; // floating +N coin notifications
-let achUnlocked=JSON.parse(localStorage.getItem('ae_ach')||'{}');
+let achUnlocked=_safeJSON('ae_ach');
 let achPopup=null; // {id, t} current achievement popup animation
 let lastPlayDay=+localStorage.getItem('ae_lastday')||0;
 let streakDays=+localStorage.getItem('ae_streakdays')||0;
@@ -367,10 +531,15 @@ const SKIP_COST=200;
 const WEEKLY_REWARD=200;
 const AD_COIN_REWARD=60; // coins earned from watching a rewarded ad
 
-// Ads system — placeholder functions, swap with real AdMob later
-let adsRemoved=localStorage.getItem('ae_noads')==='1';
-let lastInterstitialTime=0; // timestamp of last interstitial shown
+// IAP-free build: there is no Remove Ads purchase. `adsRemoved` is hard-coded
+// false so any old code paths still gate correctly. If real StoreKit IAP
+// lands later, restore the localStorage read here.
+const adsRemoved=false;
 const INTERSTITIAL_INTERVAL=300; // seconds between interstitials (5 min)
+// Initialized so the FIRST interstitial trigger is allowed instead of being
+// suppressed by the cool-down (which compares against gt — game-time seconds
+// since boot — that starts at 0).
+let lastInterstitialTime=-INTERSTITIAL_INTERVAL;
 let adRewardCallback=null; // callback after rewarded ad completes
 
 // Real AdMob integration via @capacitor-community/admob
@@ -390,11 +559,25 @@ async function initAdMob(){
   try{
     if(typeof Capacitor==='undefined'||!Capacitor.Plugins.AdMob)return;
     const AdMob=Capacitor.Plugins.AdMob;
-    // On iOS, request ATT permission BEFORE initializing AdMob so the prompt
-    // appears at first launch. requestTrackingAuthorization=true triggers it.
+
+    // On iOS: explicitly request ATT permission FIRST, BEFORE initializing AdMob.
+    // Apple rejected v1.0 because the ATT prompt was missing. The plugin's
+    // built-in `requestTrackingAuthorization: true` flag inside .initialize()
+    // doesn't reliably show the prompt on iPadOS 26+. Calling the dedicated
+    // method explicitly works, and we wait for the user response before init
+    // so SDK telemetry never goes out before the user has answered.
+    if(_isIOS()){
+      try{
+        const status=await AdMob.trackingAuthorizationStatus();
+        if(status&&status.status==='notDetermined'){
+          await AdMob.requestTrackingAuthorization();
+        }
+      }catch(e){/* method may not exist in older plugin versions — fall through */}
+    }
+
     await AdMob.initialize({
       initializeForTesting:false,
-      requestTrackingAuthorization:_isIOS()
+      requestTrackingAuthorization:false  // already handled explicitly above
     });
     // Prepare rewarded ad
     await AdMob.prepareRewardVideoAd({
@@ -411,8 +594,11 @@ async function initAdMob(){
       if(adRewardCallback)adRewardCallback();
       adRewardCallback=null;
     });
-    // Re-prepare after close
+    // Re-prepare after close. Also clear adRewardCallback — if user dismissed
+    // without earning the reward, the callback should NOT fire later when the
+    // next ad's reward event arrives.
     AdMob.addListener('onRewardedVideoAdDismissed',()=>{
+      adRewardCallback=null;
       AdMob.prepareRewardVideoAd({adId:REWARDED_ID(),isTesting:false}).catch(()=>{});
     });
     AdMob.addListener('onInterstitialAdDismissed',()=>{
@@ -421,13 +607,24 @@ async function initAdMob(){
     admobReady=true;
   }catch(e){/* browser/no AdMob — silently continue */}
 }
-initAdMob();
+
+// Defer AdMob init until AFTER the splash screen has dismissed and the
+// WebView is fully visible — Apple requires the ATT prompt to appear in the
+// foreground after the app's UI is rendered, never during launch/splash.
+function _scheduleAdMobInit(){
+  // 1.5s gives the Capacitor splash time to fade and the WebView to attach.
+  setTimeout(initAdMob,1500);
+}
+if(document.readyState==='complete') _scheduleAdMobInit();
+else window.addEventListener('load',_scheduleAdMobInit);
 
 function showRewardedAd(onReward){
   if(admobReady&&typeof Capacitor!=='undefined'){
     adRewardCallback=onReward;
     Capacitor.Plugins.AdMob.showRewardVideoAd().catch(()=>{
-      // Ad failed — give reward anyway (don't punish player)
+      // Ad failed — give reward anyway (don't punish player) and CLEAR the
+      // pending callback so a later successful ad doesn't fire it twice.
+      adRewardCallback=null;
       if(onReward)onReward();
     });
   }else{
@@ -443,17 +640,6 @@ function showInterstitialAd(){
   if(admobReady&&typeof Capacitor!=='undefined'){
     Capacitor.Plugins.AdMob.showInterstitial().catch(()=>{});
   }
-}
-function buyRemoveAds(){
-  // TODO: connect to Google Play Billing when ready
-  adsRemoved=true;
-  localStorage.setItem('ae_noads','1');
-}
-function buyCoins(amount){
-  // TODO: connect to Google Play Billing when ready
-  coins+=amount;
-  totalCoinsEarned+=amount;
-  save();
 }
 function useHint(){
   if(coins<HINT_COST||hintTime>0)return false;
@@ -756,6 +942,10 @@ function buildArrowWorldPath(a,cs,gx,gy){
 }
 
 function tapArrowByIndex(idx){
+  // Guard: block taps during the brief transition window after game-over /
+  // level-complete (a setTimeout flips state in 500ms). Without this, the
+  // user can tap further arrows in those 500ms and corrupt the post-state.
+  if(inputLocked)return;
   const a=arrows[idx];
   if(!a||!a.alive)return;
 
@@ -766,12 +956,16 @@ function tapArrowByIndex(idx){
     const cs=getCellSize(),gx=getGridX(),gy=getGridY();
     const bodyLen=arrowBodyLen(a,cs);
     const extLen=1600;
+    // Pre-build the polyline ONCE per anim (was rebuilt every frame in the
+    // draw loop — main cause of lag during a chain of arrow exits).
+    const path=buildArrowWorldPath(a,cs,gx,gy);
     anims.push({
       arrow:a,
       dir:a.dir,
       t:0,dur:1.2,
       col:TH.arrow,cs,gx,gy,
       bodyLen,totalDist:bodyLen+extLen,
+      path,
     });
     sfx.swoosh(a.dir);haptic(10);
 
@@ -779,7 +973,9 @@ function tapArrowByIndex(idx){
     let allGone=true;
     for(const ar of arrows)if(ar.alive){allGone=false;break}
     if(allGone){
+      inputLocked=true;
       setTimeout(()=>{
+        inputLocked=false;
         S='complete';
         sfx.complete();haptic(30);
         const s=max(1,undosLeft);
@@ -833,7 +1029,8 @@ function tapArrowByIndex(idx){
     // Visual feedback: floating "-1 ❤" near the head
     spawnFloater(sx,sy-cs*.6,'-1',TH.arrowBlock);
     if(undosLeft<=0){
-      setTimeout(()=>{S='gameover';sfx.gameover()},500);
+      inputLocked=true;
+      setTimeout(()=>{S='gameover';sfx.gameover();inputLocked=false},500);
     }
   }
 }
@@ -844,6 +1041,7 @@ function tapArrowByIndex(idx){
 // ================================================================
 function spawnConfetti(){
   confetti=[];
+  if(reducedMotion)return; // celebration confetti is purely decorative
   const colors=[TH.accent,TH.success,TH.star,TH.warning,'#c468a0','#68b89c'];
   for(let i=0;i<35;i++){
     confetti.push({
@@ -862,7 +1060,7 @@ function spawnConfetti(){
 // Grid fills almost the entire screen width. Minimal 8px padding per side.
 function getCellSize(){return min((W-16)/gridCols,(H*.70)/gridRows)}
 function getGridX(){return(W-gridCols*getCellSize())/2}
-function getGridY(){return H*.13}
+function getGridY(){return H*.15} // grid below the title row at TOP_Y=75 + stars at TOP_Y+22
 
 // ================================================================
 //  DRAWING HELPERS
@@ -1001,120 +1199,123 @@ function btnPressScale(x,y,w,h){
   return 1-dip*.05;
 }
 
-// Background with soft gradient + colored light blobs — gives the liquid-glass
-// buttons something to actually refract, which is the whole point of the material.
+// Background with soft gradient + colored light blobs. Cached to an offscreen
+// canvas so we don't recreate 4 gradient objects per frame (was the main lag
+// source — gradient allocation on iOS WebKit is expensive).
+let _bgCache=null,_bgCacheDark=null;
+function _renderBg(dark){
+  const cv=document.createElement('canvas');
+  cv.width=W;cv.height=H;
+  const x=cv.getContext('2d');
+  if(!x)return null;
+  const bg=x.createLinearGradient(0,0,0,H);
+  if(dark){bg.addColorStop(0,'#24244a');bg.addColorStop(1,'#15152a');}
+  else{bg.addColorStop(0,'#faf7f1');bg.addColorStop(1,'#ece6d8');}
+  x.fillStyle=bg;x.fillRect(0,0,W,H);
+  x.save();
+  x.globalAlpha=dark?.35:.22;
+  const b1=x.createRadialGradient(W*.85,H*.12,0,W*.85,H*.12,W*.7);
+  b1.addColorStop(0, dark?'#d48a4a':'#d4aa4a');b1.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=b1;x.fillRect(0,0,W,H);
+  const b2=x.createRadialGradient(W*.1,H*.85,0,W*.1,H*.85,W*.8);
+  b2.addColorStop(0, dark?'#5a7aaa':'#7a9cc8');b2.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=b2;x.fillRect(0,0,W,H);
+  const b3=x.createRadialGradient(W*.7,H*.55,0,W*.7,H*.55,W*.55);
+  b3.addColorStop(0, dark?'#a66090':'#e88aa8');b3.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=b3;x.fillRect(0,0,W,H);
+  x.restore();
+  return cv;
+}
 function drawBg(){
-  // Base gradient
-  const bg=X.createLinearGradient(0,0,0,H);
-  if(darkMode){
-    bg.addColorStop(0,'#24244a');
-    bg.addColorStop(1,'#15152a');
-  }else{
-    bg.addColorStop(0,'#faf7f1');
-    bg.addColorStop(1,'#ece6d8');
+  if(_bgCacheDirty||_bgCacheDark!==darkMode){
+    _bgCache=_renderBg(darkMode);
+    _bgCacheDark=darkMode;
+    _bgCacheDirty=false;
   }
-  X.fillStyle=bg;X.fillRect(0,0,W,H);
-
-  // Colored light blobs (simulate the wallpaper Liquid Glass refracts)
-  X.save();
-  X.globalAlpha=darkMode?.35:.22;
-  // Top-right warm blob
-  const b1=X.createRadialGradient(W*.85,H*.12,0,W*.85,H*.12,W*.7);
-  b1.addColorStop(0, darkMode?'#d48a4a':'#d4aa4a');
-  b1.addColorStop(1,'rgba(0,0,0,0)');
-  X.fillStyle=b1;X.fillRect(0,0,W,H);
-  // Bottom-left cool blob
-  const b2=X.createRadialGradient(W*.1,H*.85,0,W*.1,H*.85,W*.8);
-  b2.addColorStop(0, darkMode?'#5a7aaa':'#7a9cc8');
-  b2.addColorStop(1,'rgba(0,0,0,0)');
-  X.fillStyle=b2;X.fillRect(0,0,W,H);
-  // Mid pink blob
-  const b3=X.createRadialGradient(W*.7,H*.55,0,W*.7,H*.55,W*.55);
-  b3.addColorStop(0, darkMode?'#a66090':'#e88aa8');
-  b3.addColorStop(1,'rgba(0,0,0,0)');
-  X.fillStyle=b3;X.fillRect(0,0,W,H);
-  X.restore();
+  // Fallback: if cache failed (e.g. WebKit refused offscreen canvas alloc),
+  // draw a solid background so the screen isn't blank.
+  if(_bgCache){X.drawImage(_bgCache,0,0,W,H);}
+  else{X.fillStyle=darkMode?'#1a1a2e':'#f5f2ed';X.fillRect(0,0,W,H);}
 }
 
-// iOS 26 "Liquid Glass" overlay. Call AFTER the base fill and BEFORE outer stroke.
-// Adds a visible glass material tint, a strong concave-lens top highlight,
-// inset lens shadow, bottom light-bleed, and bright dual rim lights.
-function glass(x,y,w,h,r){
+// iOS 26 "Liquid Glass" overlay. Tuned separately for light & dark themes.
+// Cached per (w, h, r, dark) — buttons of the same size share the same render,
+// blitted via drawImage. This is the single biggest win for the menu screen
+// where 6+ same-sized buttons are drawn 60×/sec. Cache is invalidated when
+// theme toggles. Cache size is bounded by the small set of distinct sizes.
+function _renderGlass(w,h,r,dark){
+  const cv=document.createElement('canvas');
+  cv.width=Math.ceil(w);cv.height=Math.ceil(h);
+  const x=cv.getContext('2d');
+  if(!x)return null;
   const rr=max(0,r-.5);
-
-  X.save();
-  X.beginPath();X.roundRect(x,y,w,h,r);X.clip();
-
-  // 1) GLASS MATERIAL — translucent tint on top of existing backdrop
-  X.fillStyle=darkMode?'rgba(255,255,255,.1)':'rgba(255,255,255,.22)';
-  X.fillRect(x,y,w,h);
-
-  // 2) STRONG TOP SPECULAR — solid-white pulse along the top arc
-  const g1=X.createLinearGradient(0,y,0,y+h*.5);
-  g1.addColorStop(0,   darkMode?'rgba(255,255,255,.7)': 'rgba(255,255,255,1)');
-  g1.addColorStop(.35, darkMode?'rgba(255,255,255,.15)':'rgba(255,255,255,.25)');
-  g1.addColorStop(1,   'rgba(255,255,255,0)');
-  X.fillStyle=g1;X.fillRect(x,y,w,h*.5);
-
-  // 3) LENS INSET SHADOW — creates concave-glass volume
-  const g2=X.createLinearGradient(0,y+h*.4,0,y+h);
-  g2.addColorStop(0, 'rgba(0,0,0,0)');
-  g2.addColorStop(1, darkMode?'rgba(0,0,0,.25)':'rgba(0,0,0,.11)');
-  X.fillStyle=g2;X.fillRect(x,y+h*.4,w,h*.6);
-
-  // 4) BOTTOM LIGHT BLEED — bright refracted lens lip
-  const g3=X.createLinearGradient(0,y+h*.78,0,y+h);
-  g3.addColorStop(0, 'rgba(255,255,255,0)');
-  g3.addColorStop(1, darkMode?'rgba(255,255,255,.35)':'rgba(255,255,255,.65)');
-  X.fillStyle=g3;X.fillRect(x,y+h*.78,w,h*.22);
-
-  X.restore();
-
-  // 5) BRIGHT TOP RIM — 1.5px hairline specular following the upper curve
-  X.save();
-  X.beginPath();X.rect(x,y,w,h*.5);X.clip();
-  X.beginPath();X.roundRect(x+.75,y+.75,w-1.5,h-1.5,max(0,r-.75));
-  X.strokeStyle=darkMode?'rgba(255,255,255,.75)':'rgba(255,255,255,1)';
-  X.lineWidth=1.5;X.stroke();
-  X.restore();
-
-  // 6) BOTTOM RIM — refracted "lens lip" light
-  X.save();
-  X.beginPath();X.rect(x,y+h*.6,w,h*.4);X.clip();
-  X.beginPath();X.roundRect(x+.5,y+.5,w-1,h-1,rr);
-  X.strokeStyle=darkMode?'rgba(255,255,255,.4)':'rgba(255,255,255,.8)';
-  X.lineWidth=1;X.stroke();
-  X.restore();
+  x.save();
+  x.beginPath();x.roundRect(0,0,w,h,r);x.clip();
+  x.fillStyle=dark?'rgba(255,255,255,.18)':'rgba(255,255,255,.22)';
+  x.fillRect(0,0,w,h);
+  const g1=x.createLinearGradient(0,0,0,h*.5);
+  g1.addColorStop(0,'rgba(255,255,255,'+(dark?'.95':'1')+')');
+  g1.addColorStop(.35,'rgba(255,255,255,.25)');
+  g1.addColorStop(1,'rgba(255,255,255,0)');
+  x.fillStyle=g1;x.fillRect(0,0,w,h*.5);
+  const g2=x.createLinearGradient(0,h*.4,0,h);
+  g2.addColorStop(0,'rgba(0,0,0,0)');
+  g2.addColorStop(1,'rgba(0,0,0,'+(dark?'.4':'.11')+')');
+  x.fillStyle=g2;x.fillRect(0,h*.4,w,h*.6);
+  const g3=x.createLinearGradient(0,h*.78,0,h);
+  g3.addColorStop(0,'rgba(255,255,255,0)');
+  g3.addColorStop(1,'rgba(255,255,255,'+(dark?'.55':'.65')+')');
+  x.fillStyle=g3;x.fillRect(0,h*.78,w,h*.22);
+  x.restore();
+  x.save();
+  x.beginPath();x.rect(0,0,w,h*.5);x.clip();
+  x.beginPath();x.roundRect(.75,.75,w-1.5,h-1.5,max(0,r-.75));
+  x.strokeStyle='rgba(255,255,255,1)';x.lineWidth=1.5;x.stroke();
+  x.restore();
+  x.save();
+  x.beginPath();x.rect(0,h*.6,w,h*.4);x.clip();
+  x.beginPath();x.roundRect(.5,.5,w-1,h-1,rr);
+  x.strokeStyle='rgba(255,255,255,'+(dark?'.7':'.8')+')';x.lineWidth=1;x.stroke();
+  x.restore();
+  return cv;
 }
+// Glass overlay disabled per UX feedback — looked muddy in dark mode and felt
+// "uneven" in both themes. Kept as a no-op so existing call sites stay valid.
+function glass(x,y,w,h,r){}
+function _clearGlassCache(){_glassCache.clear();}
+
+// True when a modal/overlay is on top — buttons under must NOT consume the
+// tap (the overlay needs it). Also disables their hover state for clarity.
+function _inputBlocked(){return langPickerOpen}
 
 function drawBtn(label,x,y,w,h,color){
-  const hv=abs(mx-x)<w/2&&abs(my-y)<h/2;
+  const blocked=_inputBlocked();
+  const hv=!blocked&&abs(mx-x)<w/2&&abs(my-y)<h/2;
   const sc=btnPressScale(x,y,w,h);
   const dw=w*sc,dh=h*sc;
   const r=dh/2;
   X.fillStyle=hv?TH.btnHover:TH.btnBg;
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.fill();
-  glass(x-dw/2,y-dh/2,dw,dh,r);
   X.strokeStyle=hv?(color||TH.accent)+'60':TH.border;X.lineWidth=hv?1.5:1;
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.stroke();
-  txt(label,x,y,floor(h*.38),hv?TH.text:TH.textSec);
-  if(tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();tapped=false;return true}
+  txt(label,x,y,floor(h*.38),hv?TH.btnText:TH.btnTextSec);
+  if(!blocked&&tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();tapped=false;return true}
   return false;
 }
 
 function drawBigBtn(label,x,y,w,h,color){
-  const hv=abs(mx-x)<w/2&&abs(my-y)<h/2;
+  const blocked=_inputBlocked();
+  const hv=!blocked&&abs(mx-x)<w/2&&abs(my-y)<h/2;
   const sc=btnPressScale(x,y,w,h);
   const dw=w*sc,dh=h*sc;
   const r=dh/2;
   const c=color||TH.accent;
-  X.fillStyle=hv?c+'25':c+'15';
+  X.fillStyle=hv?c+'30':c+'18';
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.fill();
-  glass(x-dw/2,y-dh/2,dw,dh,r);
   X.strokeStyle=c+'50';X.lineWidth=1.5;
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.stroke();
-  txt(label,x,y,floor(h*.4),hv?TH.text:(darkMode?'rgba(255,255,255,.7)':'rgba(0,0,0,.5)'));
-  if(tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();haptic(5);tapped=false;return true}
+  txt(label,x,y,floor(h*.4),TH.btnText);
+  if(!blocked&&tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();haptic(5);tapped=false;return true}
   return false;
 }
 
@@ -1157,8 +1358,9 @@ function drawCoin(x,y,r){
 function drawMenu(){
   drawBg();
 
-  // Animated background: many arrows drifting across the screen
-  // Each arrow has its own position, direction, speed, size, and lifecycle
+  // Animated background: many arrows drifting across the screen.
+  // Skipped entirely when reducedMotion is on (decorative-only motion).
+  if(!reducedMotion){
   if(!window._bgArrows){
     window._bgArrows=[];
     for(let i=0;i<14;i++)window._bgArrows.push({
@@ -1183,14 +1385,16 @@ function drawMenu(){
       a.life=0;a.dur=rnd(4,8);a.alpha=rnd(.08,.18);
     }
   }
+  } // end !reducedMotion bg arrows
 
-  // Title — close to top, right under coins/settings bar
-  txtP(t('title1'),W/2,H*.10,36,TH.text);
-  txtP(t('title2'),W/2,H*.16,36,TH.accent);
-  txt(t('tagline'),W/2,H*.21,12,TH.textSec);
+  // Title — moved further down (clear of dynamic island + breathing room
+  // for the heavier stats panel below)
+  txtP(t('title1'),W/2,H*.16,36,TH.text);
+  txtP(t('title2'),W/2,H*.22,36,TH.accent);
+  txt(t('tagline'),W/2,H*.265,12,TH.textSec);
 
   // Stats panel
-  const spY=H*.28,spW=300,spH=66;
+  const spY=H*.33,spW=300,spH=66;
   X.fillStyle=TH.cardBg;
   X.beginPath();X.roundRect(W/2-spW/2,spY-spH/2,spW,spH,14);X.fill();
   glass(W/2-spW/2,spY-spH/2,spW,spH,14);
@@ -1206,15 +1410,14 @@ function drawMenu(){
   txtP(t('trophy'),col4,spY-13,9,TH.textSec);
   txtP(achUnlockedCount()+'/'+ACHIEVEMENTS.length,col4,spY+9,13,TH.accent);
 
-  // PLAY button
-  if(drawBigBtn('▶  '+t('play'),W/2,H*.50,210,56,TH.accent)){
+  // PLAY button — text only, no play-icon (it broke the visual style)
+  if(drawBigBtn(t('play'),W/2,H*.58,210,56,TH.accent)){
     goto('play',()=>{isDaily=false;isWeekly=false;level=maxLevel;generateLevel(level)});
   }
 
-  // 2×2 grid of secondary buttons
-  // Nav buttons — pushed down to bottom half
+  // 2×2 grid of secondary buttons + achievements row
   const bW=138,bH=42,bGapX=16,bGapY=12;
-  const gX=W/2,gY1=H*.60,gY2=gY1+bH+bGapY;
+  const gX=W/2,gY1=H*.70,gY2=gY1+bH+bGapY;
   // Row 1
   if(drawBtn(t('levels'),gX-bW/2-bGapX/2,gY1,bW,bH)){
     goto('levels',()=>{levelsPage=floor((level-1)/25)});
@@ -1234,8 +1437,9 @@ function drawMenu(){
     goto('achievements');
   }
 
-  // Settings gear top-right
-  const gx=W-36,gy=36;
+  // Settings gear top-right — y is safe-area-aware so it adapts to any
+  // future iPhone with a larger notch / Dynamic Island inset.
+  const gx=W-36,gy=Math.max(54,safeTop+18);
   const ghv=abs(mx-gx)<20&&abs(my-gy)<20;
   X.strokeStyle=ghv?TH.text:TH.textSec;X.lineWidth=1.5;
   X.beginPath();X.arc(gx,gy,10,0,TAU);X.stroke();
@@ -1246,11 +1450,12 @@ function drawMenu(){
     X.beginPath();X.arc(gx+cos(a)*10,gy+sin(a)*10,2,0,TAU);X.fill()}
   if(tapped&&abs(tapX-gx)<20&&abs(tapY-gy)<20){sfx.tap();tapped=false;goto('settings')}
 
-  // Coins
-  drawCoin(36,36,7);
-  txt(coins+'',52,36,13,TH.star,'left');
+  // Coins — nudged slightly below the gear for better visual balance
+  const _topY=Math.max(55,safeTop+19);
+  drawCoin(36,_topY,7);
+  txt(coins+'',52,_topY,13,TH.star,'left');
 
-  txt('v1.0.0',W/2,H*.96,9,TH.textDim);
+  txt(APP_VERSION,W/2,H*.96,10,TH.textDim);
 }
 
 // --- PLAY ---
@@ -1259,16 +1464,31 @@ function drawPlay(){
 
   const cs=getCellSize(),gx=getGridX(),gy=getGridY();
 
-  // Top bar
-  txt('Level '+level,W/2,30,16,TH.text);
-  // Stars for this level goal
+  // Top app bar — y derives from device safe-area inset so the row sits
+  // just below status bar / Dynamic Island on any iPhone (and Android too).
+  // Floor at 65 so non-notched devices still get reasonable padding.
+  const TOP_Y=Math.max(65,safeTop+25);
+
+  // Pause/menu button (top-left) — bigger hit area (44×44) per HIG touch target
+  const phv=abs(mx-32)<24&&abs(my-TOP_Y)<24;
+  // Draw a subtle background card behind the icon so the touch area is obvious
+  X.fillStyle=phv?TH.btnHover:TH.btnBg;
+  X.beginPath();X.roundRect(32-22,TOP_Y-18,44,36,18);X.fill();
+  X.strokeStyle=TH.border;X.lineWidth=1;
+  X.beginPath();X.roundRect(32-22,TOP_Y-18,44,36,18);X.stroke();
+  txt('≡',32,TOP_Y,22,phv?TH.text:TH.textSec);
+  if(tapped&&abs(tapX-32)<24&&abs(tapY-TOP_Y)<24){sfx.tap();tapped=false;goto('menu',()=>{isDaily=false;isWeekly=false});return}
+
+  // Level title (center)
+  txt('Level '+level,W/2,TOP_Y,16,TH.text);
+  // Stars for this level goal — below the title
   for(let i=0;i<3;i++){
-    drawStar(W/2-20+i*20,55,7,moves<=minMoves+i*1&&i<(moves<=minMoves?3:moves<=minMoves+2?2:1));
+    drawStar(W/2-20+i*20,TOP_Y+22,7,moves<=minMoves+i*1&&i<(moves<=minMoves?3:moves<=minMoves+2?2:1));
   }
 
-  // Hearts = lives. Lose one per wrong tap; at 0 → game over.
+  // Hearts = lives (top-right, vertically centered with menu button)
   for(let i=0;i<3;i++){
-    const hx=W-26-i*24,hy=28;
+    const hx=W-26-i*24,hy=TOP_Y;
     const full=i<undosLeft;
     X.fillStyle=full?'#e05555':(darkMode?'rgba(255,255,255,.08)':'rgba(0,0,0,.08)');
     X.save();X.translate(hx,hy);
@@ -1277,11 +1497,6 @@ function drawPlay(){
     X.bezierCurveTo(0,12,9,8,9,3);X.bezierCurveTo(9,-1,5,-2,0,3);
     X.fill();X.restore();
   }
-
-  // Pause button (top left)
-  const phv=abs(mx-30)<18&&abs(my-35)<18;
-  txt('≡',30,35,20,phv?TH.text:TH.textSec);
-  if(tapped&&abs(tapX-30)<18&&abs(tapY-35)<18){sfx.tap();tapped=false;goto('menu',()=>{isDaily=false;isWeekly=false});return}
 
   // Advance level reveal animation (staggered fade-in of all arrows)
   if(levelRevealT<1)levelRevealT=min(1,levelRevealT+1/60/.9);
@@ -1310,13 +1525,14 @@ function drawPlay(){
       }
     }
 
-    // Hint highlight — pulse a warm yellow glow behind the hinted arrow
-    if(i===hintArrow&&hintTime>0){
+    // Hint highlight: cheap pulse via globalAlpha + slightly larger stroke
+    // overlay instead of shadowBlur (which was a major perf hit on iOS WebKit
+    // — every alive arrow burned GPU bandwidth even when only one was hinted).
+    if(i===hintArrow&&hintTime>0&&!reducedMotion){
       const pulse=.5+.5*sin(gt*6);
       X.save();
-      X.shadowColor=TH.star;
-      X.shadowBlur=10+pulse*14;
-      drawArrowStatic(a,cs,gx,gy,TH.star,.9*revealA,shakeOff);
+      X.globalAlpha=(.4+pulse*.5)*revealA;
+      drawArrowStatic(a,cs,gx,gy,TH.star,1,shakeOff);
       X.restore();
     }
 
@@ -1330,11 +1546,13 @@ function drawPlay(){
   // Tutorial on level 1 — show after reveal animation completes
   if(level===1&&!isDaily&&!isWeekly&&levelRevealT>=1&&moves===0){
     let tutIdx=-1;
+    let aliveCount=0;
     for(let i=0;i<arrows.length;i++){
-      if(arrows[i].alive&&canEscape(i)){tutIdx=i;break}
+      if(arrows[i].alive){
+        aliveCount++;
+        if(tutIdx<0&&canEscape(i))tutIdx=i;
+      }
     }
-    window._tutDebug={tutIdx,arrowsLen:arrows.length,revealT:levelRevealT,moves};
-    const aliveCount=arrows.filter(a=>a.alive).length;
     const totalCount=arrows.length;
 
     if(tutIdx>=0){
@@ -1343,11 +1561,10 @@ function drawPlay(){
       const head=ta.cells[ta.cells.length-1];
       const hx=gx+head[1]*cs+cs/2,hy=gy+head[0]*cs+cs/2;
 
-      // No dark overlay — just glow on the correct arrow
+      // Pulse via alpha — much cheaper than shadowBlur on iOS WebKit.
       X.save();
-      X.shadowColor=TH.star;
-      X.shadowBlur=16+pulse*20;
-      drawArrowStatic(ta,cs,gx,gy,TH.star,.6,0);
+      X.globalAlpha=.45+pulse*.4;
+      drawArrowStatic(ta,cs,gx,gy,TH.star,1,0);
       X.restore();
 
       // Short dashed line (5-6 dashes) + small arrowhead at end
@@ -1404,8 +1621,8 @@ function drawPlay(){
     an.t+=1/60;
     if(an.t>=an.dur){anims.splice(i,1);continue}
 
-    // Build the extended world-space path (cells + straight extension in exit dir)
-    const path=buildArrowWorldPath(an.arrow,an.cs,an.gx,an.gy);
+    // Use pre-built path cached on anim creation (rebuilt every frame before).
+    const path=an.path;
 
     const p=an.t/an.dur;
     const ep=p<.5?2*p*p:1-2*(1-p)*(1-p); // ease-in-out: smooth start and end
@@ -1431,37 +1648,31 @@ function drawPlay(){
   drawCoin(W*.72,sy1,6);
   txt(coins+'',W*.75,sy1,11,TH.star,'left');
 
-  // Action buttons row (Hint + Skip)
-  const by=H*.93,bw=80,bh=30;
-  // HINT
-  const hbx=W*.32;
-  const hbhv=abs(mx-hbx)<bw/2&&abs(my-by)<bh/2;
+  // Action buttons row (Hint + Skip) — wider so labels in any language fit
+  // alongside the coin badge without truncation. Layout: label left, coin
+  // icon + cost right; both padded inside the pill.
+  const by=H*.93,bw=130,bh=34;
+  const _drawActionBtn=(bx,label,cost,enabled,color)=>{
+    const hv=abs(mx-bx)<bw/2&&abs(my-by)<bh/2;
+    X.fillStyle=enabled?(hv?color+'35':color+'20'):TH.btnBg;
+    X.beginPath();X.roundRect(bx-bw/2,by-bh/2,bw,bh,bh/2);X.fill();
+    X.strokeStyle=enabled?color+'60':TH.border;X.lineWidth=1;
+    X.beginPath();X.roundRect(bx-bw/2,by-bh/2,bw,bh,bh/2);X.stroke();
+    // Label aligned LEFT inside the button (so coin/cost gets clean space on the right)
+    const labelColor=enabled?TH.text:TH.textDim;
+    const costColor=enabled?TH.star:TH.textDim;
+    txt(label,bx-bw*.18,by,12,labelColor);
+    drawCoin(bx+bw*.18,by,6);
+    txt(cost+'',bx+bw*.28,by,11,costColor,'left');
+    return tapped&&abs(tapX-bx)<bw/2&&abs(tapY-by)<bh/2;
+  };
   const canHint=coins>=HINT_COST&&hintTime<=0;
-  X.fillStyle=canHint?(hbhv?TH.star+'35':TH.star+'20'):TH.btnBg;
-  X.beginPath();X.roundRect(hbx-bw/2,by-bh/2,bw,bh,bh/2);X.fill();
-  glass(hbx-bw/2,by-bh/2,bw,bh,bh/2);
-  X.strokeStyle=canHint?TH.star+'60':TH.border;X.lineWidth=1;
-  X.beginPath();X.roundRect(hbx-bw/2,by-bh/2,bw,bh,bh/2);X.stroke();
-  txt(t('hint'),hbx-bw*.26,by,11,canHint?TH.text:TH.textDim);
-  drawCoin(hbx+bw*.05,by,5);
-  txt(HINT_COST+'',hbx+bw*.15,by,10,canHint?TH.star:TH.textDim,'left');
-  if(tapped&&abs(tapX-hbx)<bw/2&&abs(tapY-by)<bh/2){
+  if(_drawActionBtn(W*.275,t('hint'),HINT_COST,canHint,TH.star)){
     if(canHint)useHint();
     tapped=false;
   }
-  // SKIP
-  const sbx=W*.68;
-  const sbhv=abs(mx-sbx)<bw/2&&abs(my-by)<bh/2;
   const canSkip=coins>=SKIP_COST&&!isDaily;
-  X.fillStyle=canSkip?(sbhv?TH.warning+'35':TH.warning+'20'):TH.btnBg;
-  X.beginPath();X.roundRect(sbx-bw/2,by-bh/2,bw,bh,bh/2);X.fill();
-  glass(sbx-bw/2,by-bh/2,bw,bh,bh/2);
-  X.strokeStyle=canSkip?TH.warning+'60':TH.border;X.lineWidth=1;
-  X.beginPath();X.roundRect(sbx-bw/2,by-bh/2,bw,bh,bh/2);X.stroke();
-  txt(t('skip'),sbx-bw*.26,by,11,canSkip?TH.text:TH.textDim);
-  drawCoin(sbx+bw*.05,by,5);
-  txt(SKIP_COST+'',sbx+bw*.13,by,10,canSkip?TH.star:TH.textDim,'left');
-  if(tapped&&abs(tapX-sbx)<bw/2&&abs(tapY-by)<bh/2){
+  if(_drawActionBtn(W*.725,t('skip'),SKIP_COST,canSkip,TH.warning)){
     if(canSkip)skipLevel();
     tapped=false;
   }
@@ -1470,7 +1681,7 @@ function drawPlay(){
   timer+=1/60;
   totalPlayTime+=1/60;
 
-  if(tapped)tapped=false;
+
 }
 
 // --- COMPLETE ---
@@ -1537,17 +1748,17 @@ function drawComplete(){
     if(drawBtn(t('home'),W/2,H*.80,140,36)){goto('menu')}
   }
 
-  if(tapped)tapped=false;
+
 }
 
 // --- STATS ---
 function drawStats(){
   drawBg();
-  txtP(t('stats'),W/2,50,22,TH.text);
+  txtP(t('stats'),W/2,62,22,TH.text);
 
   // Coins top-right
-  drawCoin(W-50,36,7);
-  txt(coins+'',W-40,36,13,TH.star,'left');
+  drawCoin(W-50,64,7);
+  txt(coins+'',W-40,64,13,TH.star,'left');
 
   // Compute stats
   const totalLevelsDone=Object.keys(stars).length;
@@ -1585,49 +1796,141 @@ function drawStats(){
   }
 
   if(drawBtn('← '+t('back'),W/2,H-50,140,38)){goto('menu')}
-  if(tapped)tapped=false;
+
+}
+
+// Per-achievement icon renderer. Categories share a vector glyph so the user
+// recognises the achievement type at a glance (level → up-arrow, stars → star,
+// perfect → trophy, daily → calendar, streak → flame, no-hint → lightbulb,
+// speedrun → bolt). Drawn at logical coords centred on (cx,cy).
+function drawAchIcon(id,cx,cy,sz,col){
+  const c=col;
+  X.save();X.translate(cx,cy);
+  X.fillStyle=c;X.strokeStyle=c;X.lineWidth=1.5;X.lineJoin='round';X.lineCap='round';
+
+  if(id.startsWith('lvl_')){
+    // Up-arrow stack — three stacked triangles ("levelling up")
+    for(let i=0;i<3;i++){
+      const ay=sz*.55-i*sz*.45,al=sz*.55-i*sz*.15,a=.4-i*.1;
+      X.fillStyle=c+(['','99','66','33'][i]||'');
+      X.beginPath();X.moveTo(0,ay-al*.7);X.lineTo(al*.6,ay);X.lineTo(-al*.6,ay);X.closePath();X.fill();
+    }
+  }else if(id.startsWith('stars_')){
+    // Star burst — center star + 4 small satellites
+    const star=(s)=>{X.beginPath();
+      for(let i=0;i<5;i++){const a1=i*TAU/5-PI/2,a2=a1+TAU/10;
+        X.lineTo(cos(a1)*s,sin(a1)*s);X.lineTo(cos(a2)*s*.4,sin(a2)*s*.4)}
+      X.closePath();X.fill();};
+    X.fillStyle=c;star(sz*.7);
+    X.fillStyle=c+'80';for(let i=0;i<4;i++){
+      const a=i*PI/2+PI/4;X.save();X.translate(cos(a)*sz*.85,sin(a)*sz*.85);star(sz*.22);X.restore();
+    }
+  }else if(id.startsWith('perfect_')){
+    // Trophy cup — bowl + handles + base
+    X.fillStyle=c;
+    X.beginPath();X.moveTo(-sz*.5,-sz*.5);X.lineTo(sz*.5,-sz*.5);
+    X.lineTo(sz*.4,sz*.1);X.quadraticCurveTo(0,sz*.4,-sz*.4,sz*.1);X.closePath();X.fill();
+    // Handles
+    X.strokeStyle=c;X.lineWidth=2.5;
+    X.beginPath();X.arc(-sz*.5,-sz*.25,sz*.18,PI/2,PI*1.5);X.stroke();
+    X.beginPath();X.arc(sz*.5,-sz*.25,sz*.18,-PI/2,PI/2);X.stroke();
+    // Base
+    X.fillStyle=c;
+    X.fillRect(-sz*.08,sz*.1,sz*.16,sz*.25);
+    X.fillRect(-sz*.35,sz*.32,sz*.7,sz*.12);
+  }else if(id.startsWith('daily_')){
+    // Calendar with checkmark
+    X.fillStyle=c;
+    X.beginPath();X.roundRect(-sz*.55,-sz*.4,sz*1.1,sz*.95,sz*.12);X.fill();
+    X.fillStyle='rgba(255,255,255,.85)';
+    X.fillRect(-sz*.55,-sz*.4,sz*1.1,sz*.18);
+    // Tear-tabs
+    X.fillStyle=c;
+    X.fillRect(-sz*.35,-sz*.55,sz*.1,sz*.25);
+    X.fillRect(sz*.25,-sz*.55,sz*.1,sz*.25);
+    // Check
+    X.strokeStyle='rgba(255,255,255,.95)';X.lineWidth=2;
+    X.beginPath();X.moveTo(-sz*.25,sz*.1);X.lineTo(-sz*.05,sz*.3);X.lineTo(sz*.3,-sz*.1);X.stroke();
+  }else if(id.startsWith('streak_')){
+    // Flame
+    X.fillStyle=c;
+    X.beginPath();
+    X.moveTo(0,-sz*.6);
+    X.bezierCurveTo(sz*.4,-sz*.2,sz*.55,sz*.1,sz*.3,sz*.4);
+    X.bezierCurveTo(sz*.15,sz*.55,-sz*.15,sz*.55,-sz*.3,sz*.4);
+    X.bezierCurveTo(-sz*.55,sz*.1,-sz*.4,-sz*.2,0,-sz*.6);
+    X.fill();
+    // Inner flame highlight
+    X.fillStyle='rgba(255,255,255,.4)';
+    X.beginPath();X.moveTo(0,-sz*.25);
+    X.bezierCurveTo(sz*.18,sz*.0,sz*.22,sz*.2,sz*.05,sz*.35);
+    X.bezierCurveTo(-sz*.1,sz*.3,-sz*.18,sz*.1,0,-sz*.25);
+    X.fill();
+  }else if(id.startsWith('no_hint_')){
+    // Lightbulb
+    X.fillStyle=c;
+    X.beginPath();X.arc(0,-sz*.1,sz*.42,0,TAU);X.fill();
+    X.fillRect(-sz*.22,sz*.25,sz*.44,sz*.12);
+    X.fillRect(-sz*.18,sz*.4,sz*.36,sz*.08);
+    X.strokeStyle='rgba(255,255,255,.6)';X.lineWidth=1;
+    X.beginPath();X.moveTo(-sz*.15,-sz*.1);X.lineTo(-sz*.15,sz*.2);X.stroke();
+    X.beginPath();X.moveTo(sz*.15,-sz*.1);X.lineTo(sz*.15,sz*.2);X.stroke();
+  }else if(id==='speedrun'){
+    // Lightning bolt
+    X.fillStyle=c;
+    X.beginPath();
+    X.moveTo(sz*.1,-sz*.6);X.lineTo(-sz*.4,sz*.05);X.lineTo(-sz*.05,sz*.1);
+    X.lineTo(-sz*.15,sz*.6);X.lineTo(sz*.4,-sz*.05);X.lineTo(sz*.05,-sz*.1);
+    X.closePath();X.fill();
+  }else{
+    // Fallback: filled star
+    X.fillStyle=c;
+    X.beginPath();
+    for(let i=0;i<5;i++){const a1=i*TAU/5-PI/2,a2=a1+TAU/10;
+      X.lineTo(cos(a1)*sz*.7,sin(a1)*sz*.7);X.lineTo(cos(a2)*sz*.3,sin(a2)*sz*.3)}
+    X.closePath();X.fill();
+  }
+  X.restore();
 }
 
 // --- ACHIEVEMENTS LIST ---
 function drawAchievements(){
   drawBg();
-  txtP('ACHIEVEMENTS',W/2,50,22,TH.text);
-  txt(achUnlockedCount()+' / '+ACHIEVEMENTS.length+' unlocked',W/2,74,12,TH.textSec);
+  txtP('ACHIEVEMENTS',W/2,62,22,TH.text);
+  txt(achUnlockedCount()+' / '+ACHIEVEMENTS.length+' unlocked',W/2,86,12,TH.textSec);
 
   // Coins top-right
-  drawCoin(W-50,36,7);
-  txt(coins+'',W-40,36,13,TH.star,'left');
+  drawCoin(W-50,64,7);
+  txt(coins+'',W-40,64,13,TH.star,'left');
 
   // List
-  const startY=105,cardH=52,cardGap=8,cardW=W-40;
+  const startY=110,cardH=56,cardGap=8,cardW=W-40,cardX=20;
   for(let i=0;i<ACHIEVEMENTS.length;i++){
     const a=ACHIEVEMENTS[i];
     const y=startY+i*(cardH+cardGap);
-    if(y+cardH>H-60)break;
+    if(y+cardH>H-70)break;
     const done=!!achUnlocked[a.id];
     // Card
     X.fillStyle=done?TH.star+'18':TH.cardBg;
-    X.beginPath();X.roundRect(20,y,cardW,cardH,10);X.fill();
-    glass(20,y,cardW,cardH,10);
+    X.beginPath();X.roundRect(cardX,y,cardW,cardH,12);X.fill();
     X.strokeStyle=done?TH.star+'50':TH.border;X.lineWidth=1;
-    X.beginPath();X.roundRect(20,y,cardW,cardH,10);X.stroke();
-    // Trophy icon (filled circle with star inside) or dim
-    if(done){
-      drawStar(42,y+cardH/2,12,true);
-    }else{
-      X.fillStyle=TH.textDim;
-      X.beginPath();X.arc(42,y+cardH/2,10,0,TAU);X.fill();
-    }
+    X.beginPath();X.roundRect(cardX,y,cardW,cardH,12);X.stroke();
+    // Icon — vector glyph per category, dimmed when locked
+    drawAchIcon(a.id,cardX+28,y+cardH/2,15,done?TH.star:TH.textDim);
     // Name + desc
-    txt(a.name,65,y+18,12,done?TH.text:TH.textSec,'left','700');
-    txt(a.desc,65,y+36,10,done?TH.textSec:TH.textDim,'left');
-    // Reward — inside card bounds
-    drawCoin(cardW-10,y+cardH/2,6);
-    txt('+'+a.reward,cardW+2,y+cardH/2,10,done?TH.star:TH.textDim,'left');
+    txt(a.name,cardX+58,y+19,12,done?TH.text:TH.textSec,'left','700');
+    txt(a.desc,cardX+58,y+38,10,done?TH.textSec:TH.textDim,'left');
+    // Reward — RIGHT-anchored, "[coin] +N" inside card with 14px right padding.
+    // Was overflowing because text was 'left'-aligned starting at cardW+2.
+    const rewardStr='+'+a.reward;
+    const rightEdge=cardX+cardW-14;
+    txt(rewardStr,rightEdge,y+cardH/2,11,done?TH.star:TH.textDim,'right');
+    const textApproxW=rewardStr.length*6.5;
+    drawCoin(rightEdge-textApproxW-7,y+cardH/2,6);
   }
 
   if(drawBtn('← '+t('back'),W/2,H-50,140,38)){goto('menu')}
-  if(tapped)tapped=false;
+
 }
 
 // Achievement unlock popup — animates at top of screen
@@ -1645,12 +1948,16 @@ function drawAchPopup(){
   else if(p>.85)offY=-((p-.85)/.15)*80;
   else offY=0;
 
-  const pw=320,ph=58,px=(W-pw)/2,py=20+offY;
-  X.save();
-  X.shadowColor='rgba(0,0,0,.3)';X.shadowBlur=15;X.shadowOffsetY=3;
+  // py is safe-area aware — clears the Dynamic Island on every iPhone.
+  const pw=320,ph=58,px=(W-pw)/2,py=Math.max(60,safeTop+20)+offY;
+  // Subtle drop shadow via stacked fills (cheap) instead of shadowBlur
+  // (expensive every frame on iOS WebKit).
+  X.fillStyle='rgba(0,0,0,.10)';
+  X.beginPath();X.roundRect(px,py+3,pw,ph,14);X.fill();
+  X.fillStyle='rgba(0,0,0,.06)';
+  X.beginPath();X.roundRect(px,py+6,pw,ph,14);X.fill();
   X.fillStyle=TH.surface;
   X.beginPath();X.roundRect(px,py,pw,ph,14);X.fill();
-  X.restore();
   glass(px,py,pw,ph,14);
   X.strokeStyle=TH.star+'80';X.lineWidth=2;
   X.beginPath();X.roundRect(px,py,pw,ph,14);X.stroke();
@@ -1722,24 +2029,24 @@ function drawGameOver(){
   if(drawBtn(t('home'),W/2,H*.81,140,38)){goto('menu')}
 
   // Coins display top-right
-  drawCoin(W-50,36,7);
-  txt(coins+'',W-40,36,13,TH.star,'left');
+  drawCoin(W-50,64,7);
+  txt(coins+'',W-40,64,13,TH.star,'left');
 
-  if(tapped)tapped=false;
+
 }
 
 // --- SETTINGS ---
 let resetConfirm=false;
 function drawSettings(){
   drawBg();
-  txtP(t('settings'),W/2,50,22,TH.text);
+  txtP(t('settings'),W/2,62,22,TH.text);
 
-  // Language — cycles through LANGS on tap
+  // Language — opens picker modal (drawLangPicker draws it on top after the
+  // rest of the screen is rendered, so taps land on the modal not the buttons
+  // below it)
   const curLang=LANGS.find(l=>l.code===lang)||LANGS[0];
   if(drawBtn(t('language')+': '+curLang.name,W/2,110,260,44)){
-    const i=LANGS.findIndex(l=>l.code===lang);
-    lang=LANGS[(i+1)%LANGS.length].code;
-    localStorage.setItem('ae_lang',lang);
+    langPickerOpen=true;
   }
 
   // Sound
@@ -1750,18 +2057,9 @@ function drawSettings(){
   if(drawBtn(t('theme')+': '+(darkMode?t('themeDark'):t('themeLight')),W/2,220,260,44)){
     darkMode=!darkMode;localStorage.setItem('ae_theme',darkMode?'dark':'light');applyTheme();
   }
-  // Remove Ads — $9.99
-  if(!adsRemoved){
-    if(drawBtn(t('removeAds')+' — $9.99',W/2,295,260,44,TH.accent)){
-      buyRemoveAds();
-    }
-  }else{
-    txt(t('adsRemoved'),W/2,295,13,TH.success);
-  }
-
   // Watch Ad for Coins
-  if(drawBtn(t('watchAd')+' → +'+AD_COIN_REWARD+' '+t('coins'),W/2,350,260,44,TH.star)){
-    showRewardedAd(()=>{coins+=AD_COIN_REWARD;totalCoinsEarned+=AD_COIN_REWARD;save();spawnFloater(W/2,350,'+'+AD_COIN_REWARD)});
+  if(drawBtn(t('watchAd')+' → +'+AD_COIN_REWARD+' '+t('coins'),W/2,295,260,44,TH.star)){
+    showRewardedAd(()=>{coins+=AD_COIN_REWARD;totalCoinsEarned+=AD_COIN_REWARD;save();spawnFloater(W/2,295,'+'+AD_COIN_REWARD)});
   }
 
   // Reset — two-tap confirmation (no native dialogs)
@@ -1770,18 +2068,79 @@ function drawSettings(){
   }else{
     txt(t('areYouSure'),W/2,415,13,TH.warning);
     if(drawBtn(t('yesReset'),W/2-60,455,110,40,TH.arrowBlock)){
-      localStorage.clear();level=1;maxLevel=1;coins=60;stars={};totalStars=0;
+      // Reset wipes PROGRESS keys only — language, sound, theme preferences
+      // and system keys (lasterror, lastreject) are preserved.
+      // KEY NAMES MUST MATCH save() in line ~386 — previous list used wrong
+      // names (ae_perfect vs ae_perfects, ae_streak vs ae_streakdays, etc.)
+      // and silently left progress in storage.
+      const PROGRESS_KEYS=['ae_level','ae_maxlevel','ae_coins','ae_stars','ae_ach',
+        'ae_total_coins','ae_streakdays','ae_lastday','ae_perfects','ae_dailies',
+        'ae_nohint','ae_fastest','ae_playtime','ae_noads'];
+      for(const k of PROGRESS_KEYS)localStorage.removeItem(k);
+      // Also sweep dynamic keys: ae_best_<level>, ae_daily_<seed>, ae_weekly_<seed>
+      for(let i=localStorage.length-1;i>=0;i--){
+        const k=localStorage.key(i);
+        if(k&&(k.startsWith('ae_best_')||k.startsWith('ae_daily_')||k.startsWith('ae_weekly_')))
+          localStorage.removeItem(k);
+      }
+      level=1;maxLevel=1;coins=60;stars={};totalStars=0;
       achUnlocked={};totalPerfect=0;totalDailies=0;noHintCount=0;
       totalCoinsEarned=0;streakDays=0;totalPlayTime=0;fastestLevel=99999;
       lastPlayDay=0;hintUsedThisLevel=false;
-      adsRemoved=false;resetConfirm=false;save();
+      // adsRemoved is now a const — nothing to reset.
+      resetConfirm=false;save();
       goto('menu');
     }
     if(drawBtn(t('cancel'),W/2+60,455,110,40)){resetConfirm=false}
   }
 
   if(drawBtn('← '+t('back'),W/2,H-60,140,38)){resetConfirm=false;goto('menu')}
-  if(tapped)tapped=false;
+
+}
+
+// --- LANGUAGE PICKER MODAL ---
+// Shown over any screen; absorbs all taps until the user picks a language or
+// taps outside the panel. Lists every language in LANGS, current one marked.
+function drawLangPicker(){
+  // Dim backdrop
+  X.fillStyle='rgba(0,0,0,.5)';X.fillRect(0,0,W,H);
+  // Panel — adapts to theme: cream paper in light mode, dark navy in dark.
+  // Inner row colors derive from TH so they stay readable in both modes.
+  const panelW=300,panelH=Math.min(LANGS.length*52+90,H-100);
+  const px=(W-panelW)/2, py=(H-panelH)/2;
+  const r=22;
+  const panelBg=darkMode?'#2a2a4a':'#ffffff';
+  const titleCol=darkMode?'#f0eee8':'#2a2a2a';
+  const rowText=darkMode?'#e8e6e0':'#2a2a2a';
+  const rowSel=TH.accent;
+  const rowSelBg=darkMode?'rgba(226,179,90,.20)':'rgba(200,144,48,.16)';
+  const rowHover=darkMode?'rgba(255,255,255,.06)':'rgba(0,0,0,.05)';
+  X.fillStyle=panelBg;
+  X.beginPath();X.roundRect(px,py,panelW,panelH,r);X.fill();
+  X.strokeStyle=darkMode?'rgba(255,255,255,.10)':'rgba(0,0,0,.08)';X.lineWidth=1;
+  X.beginPath();X.roundRect(px,py,panelW,panelH,r);X.stroke();
+  txtP(t('language'),W/2,py+34,18,titleCol);
+  const rowH=46,startY=py+62,maxRows=Math.floor((panelH-90)/rowH);
+  for(let i=0;i<Math.min(LANGS.length,maxRows);i++){
+    const L=LANGS[i];
+    const ry=startY+i*rowH;
+    const sel=L.code===lang;
+    const hv=mx>px+12&&mx<px+panelW-12&&abs(my-(ry+rowH/2))<rowH/2;
+    if(sel||hv){
+      X.fillStyle=sel?rowSelBg:rowHover;
+      X.beginPath();X.roundRect(px+12,ry,panelW-24,rowH-4,12);X.fill();
+    }
+    txt(L.name,W/2,ry+rowH/2,15,sel?rowSel:rowText);
+    if(sel){txt('✓',px+panelW-30,ry+rowH/2,16,rowSel,'right')}
+    if(tapped&&abs(tapX-W/2)<panelW/2-12&&abs(tapY-(ry+rowH/2))<rowH/2){
+      lang=L.code;localStorage.setItem('ae_lang',lang);
+      langPickerOpen=false;sfx.tap();haptic(8);tapped=false;return;
+    }
+  }
+  // Close (taps outside panel) — checked LAST so row taps win
+  if(tapped&&(tapX<px||tapX>px+panelW||tapY<py||tapY>py+panelH)){
+    langPickerOpen=false;tapped=false;
+  }
 }
 
 // --- LEVELS ---
@@ -1792,15 +2151,15 @@ function drawLevels(){
   drawBg();
 
   // Header
-  txtP(t('levels'),W/2,48,22,TH.text);
+  txtP(t('levels'),W/2,62,22,TH.text);
 
   const fromLv=levelsPage*LEVELS_PER_PAGE+1;
   const toLv=fromLv+LEVELS_PER_PAGE-1;
   txt(fromLv+' – '+toLv,W/2,72,12,TH.textSec);
 
   // Coins display top-right
-  drawCoin(W-50,36,7);
-  txt(coins+'',W-40,36,13,TH.star,'left');
+  drawCoin(W-50,64,7);
+  txt(coins+'',W-40,64,13,TH.star,'left');
 
   // Grid of 25 level cards (5×5)
   const cols=5,rows=5;
@@ -1876,7 +2235,7 @@ function drawLevels(){
 
   // Back to menu
   if(drawBtn('← '+t('back'),W/2,H-55,140,36)){goto('menu')}
-  if(tapped)tapped=false;
+
 }
 
 // ================================================================
@@ -1886,6 +2245,9 @@ let _lastT=0;
 let fadingOut=false;
 function goto(newState,action){
   if(fadingOut)return;
+  // Reset transient screen-local UI flags when leaving screens — avoids the
+  // settings reset-confirm row appearing already-toggled when you come back.
+  if(newState!=='settings')resetConfirm=false;
   fadingOut=true;
   pendingState={state:newState,action:action||null};
 }
@@ -1921,22 +2283,30 @@ function loop(t){
   drawFloaters();
   drawAchPopup();
 
+  // Top-most overlays (block all underlying input)
+  if(langPickerOpen)drawLangPicker();
+
   // Screen fade overlay
   if(fadeAlpha>0){
     X.fillStyle=darkMode?`rgba(26,26,46,${fadeAlpha})`:`rgba(245,242,237,${fadeAlpha})`;
     X.fillRect(0,0,W,H);
   }
 
+  // Final tap reset — so modals/overlays drawn AFTER screen draws still get
+  // a chance to handle the tap. Individual draw functions clearing `tapped`
+  // would consume it before drawLangPicker runs.
+  tapped=false;
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
-// Register service worker for offline play + PWA install
-if('serviceWorker' in navigator){
+// Register service worker for offline play + PWA install — but ONLY when
+// running as a real web page, NOT inside the Capacitor WebView. Capacitor
+// serves assets from the app bundle; a SW would intercept those fetches and
+// can serve stale content across app updates (we burned a build on this).
+if('serviceWorker' in navigator && typeof Capacitor==='undefined'){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
-// Debug access
-window._ae={get arrows(){return arrows},get gridCols(){return gridCols},get gridRows(){return gridRows},get level(){return level},get levelRevealT(){return levelRevealT},get moves(){return moves},get isDaily(){return isDaily},get isWeekly(){return isWeekly}};
 })(); // end IIFE
 </script>
 </body>
