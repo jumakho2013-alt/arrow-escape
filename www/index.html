@@ -15,10 +15,9 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;touch-action:none}
 html,body{width:100%;height:100%;overflow:hidden;display:flex;justify-content:center;align-items:center;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Nunito',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
-/* iOS only: add safe-area padding so UI isn't hidden under notch/Dynamic Island/home indicator.
-   Body bg matches theme, so the strip looks like a natural extension of status bar (native iOS look).
-   On Android the class is not applied, so no padding → no visible frame between status bar and canvas. */
-body.ios-safe{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+/* Safe-area padding on all platforms — protects UI under notches / Dynamic Island / display cutouts.
+   Body bg matches the theme so the inset strip looks like a clean continuation of the status bar. */
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 body.light{background:#f5f2ed}
 body.dark{background:#1a1a2e}
 canvas{display:block}
@@ -45,14 +44,11 @@ const lrp=(a,b,t)=>a+(b-a)*t;
 //  THEME
 // ================================================================
 let darkMode=localStorage.getItem('ae_theme')==='dark';
-// Platform detection — Liquid Glass looks great on iOS, too harsh on Android dark mode
+// Platform vars kept as hooks for future use, but UI no longer branches on them —
+// single shared codebase between iOS and Android.
 const IS_IOS=(typeof Capacitor!=='undefined'&&Capacitor.getPlatform&&Capacitor.getPlatform()==='ios');
 const IS_ANDROID=(typeof Capacitor!=='undefined'&&Capacitor.getPlatform&&Capacitor.getPlatform()==='android');
-// iOS needs safe-area padding so notch/Dynamic Island/home indicator don't cover UI.
-// Android doesn't — adding padding creates a visible background frame.
-if(IS_IOS)document.body.classList.add('ios-safe');
 function applyTheme(){
-  // Preserve ios-safe class when toggling theme; only swap theme classes.
   document.body.classList.remove('light','dark');
   document.body.classList.add(darkMode?'dark':'light');
   // Match status bar / notch / nav bar to app theme
@@ -88,8 +84,14 @@ const TH={
   get arrowShadow(){return darkMode?'rgba(0,0,0,.3)':'rgba(0,0,0,.08)'},
   get gridLine(){return darkMode?'rgba(255,255,255,.04)':'rgba(0,0,0,.04)'},
   get cardBg(){return darkMode?'rgba(255,255,255,.04)':'rgba(0,0,0,.03)'},
-  get btnBg(){return darkMode?'rgba(255,255,255,.06)':'rgba(0,0,0,.04)'},
-  get btnHover(){return darkMode?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)'},
+  // Buttons stay light-themed in BOTH light and dark mode — product design choice.
+  // Background/arrows swap with theme, but buttons always read as clean light surfaces
+  // with dark text. This also gives buttons a natural "popover on dark bg" feel in dark mode.
+  get btnBg(){return 'rgba(245,242,237,.92)'},      // light cream, mostly opaque
+  get btnHover(){return 'rgba(255,255,255,.98)'},    // brighter on hover
+  get btnBorder(){return 'rgba(0,0,0,.08)'},         // subtle dark border — visible in both themes
+  get btnText(){return '#2a2a2a'},                   // always dark text on light button
+  get btnTextSec(){return '#6a6a6a'},                // muted dark text
 };
 
 // ================================================================
@@ -127,10 +129,9 @@ function t(k){return (STR[lang]&&STR[lang][k])||STR.en[k]||k}
 let dpr=1;
 function resize(){
   dpr=window.devicePixelRatio||1;
-  // Read body padding (0 on Android, env(safe-area-inset-*) on iOS via .ios-safe class)
-  // and subtract from the viewport so the letterboxed canvas fits inside the safe area.
-  // On Android this is a no-op; on iOS notch/Dynamic Island devices it keeps
-  // top/bottom UI (coins, settings gear, back buttons) visible above/below system chrome.
+  // Body has env(safe-area-inset-*) padding on all platforms. Subtract it so the
+  // letterboxed canvas fits inside the safe content area (notch / Dynamic Island /
+  // display cutout / home indicator). On flat devices insets are 0 → no-op.
   const bs=getComputedStyle(document.body);
   const sit=parseFloat(bs.paddingTop)||0;
   const sib=parseFloat(bs.paddingBottom)||0;
@@ -1049,23 +1050,10 @@ function drawBg(){
   X.restore();
 }
 
-// Glass overlay. Full iOS 26 Liquid Glass on iOS; subtle Material-style tint on Android.
+// Liquid Glass overlay — unified across iOS / Android / web (previous platform
+// split was removed per product decision to keep one codebase).
 // Call AFTER the base fill and BEFORE outer stroke.
 function glass(x,y,w,h,r){
-  if(IS_ANDROID){
-    // Android: soft, minimal — just a gentle top highlight, no harsh specular.
-    // Avoids the overbright "plastic" look in dark mode.
-    X.save();
-    X.beginPath();X.roundRect(x,y,w,h,r);X.clip();
-    const g=X.createLinearGradient(0,y,0,y+h);
-    g.addColorStop(0, darkMode?'rgba(255,255,255,.07)':'rgba(255,255,255,.18)');
-    g.addColorStop(1, darkMode?'rgba(255,255,255,0)':'rgba(255,255,255,0)');
-    X.fillStyle=g;X.fillRect(x,y,w,h);
-    X.restore();
-    return;
-  }
-
-  // iOS + web: full Liquid Glass
   const rr=max(0,r-.5);
 
   X.save();
@@ -1118,12 +1106,13 @@ function drawBtn(label,x,y,w,h,color){
   const sc=btnPressScale(x,y,w,h);
   const dw=w*sc,dh=h*sc;
   const r=dh/2;
+  // Light-themed button regardless of global theme (product decision)
   X.fillStyle=hv?TH.btnHover:TH.btnBg;
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.fill();
   glass(x-dw/2,y-dh/2,dw,dh,r);
-  X.strokeStyle=hv?(color||TH.accent)+'60':TH.border;X.lineWidth=hv?1.5:1;
+  X.strokeStyle=hv?(color||TH.accent)+'80':TH.btnBorder;X.lineWidth=hv?1.5:1;
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.stroke();
-  txt(label,x,y,floor(h*.38),hv?TH.text:TH.textSec);
+  txt(label,x,y,floor(h*.38),hv?TH.btnText:TH.btnTextSec);
   if(tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();tapped=false;return true}
   return false;
 }
@@ -1134,12 +1123,16 @@ function drawBigBtn(label,x,y,w,h,color){
   const dw=w*sc,dh=h*sc;
   const r=dh/2;
   const c=color||TH.accent;
-  X.fillStyle=hv?c+'25':c+'15';
+  // Big button uses accent tint, but base is still light so it reads well on dark bg
+  X.fillStyle=hv?'rgba(255,255,255,.98)':'rgba(245,242,237,.92)';
+  X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.fill();
+  // Light accent wash on top of the light base
+  X.fillStyle=hv?c+'28':c+'18';
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.fill();
   glass(x-dw/2,y-dh/2,dw,dh,r);
-  X.strokeStyle=c+'50';X.lineWidth=1.5;
+  X.strokeStyle=c+'60';X.lineWidth=1.5;
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.stroke();
-  txt(label,x,y,floor(h*.4),hv?TH.text:(darkMode?'rgba(255,255,255,.7)':'rgba(0,0,0,.5)'));
+  txt(label,x,y,floor(h*.4),hv?TH.btnText:TH.btnTextSec);
   if(tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();haptic(5);tapped=false;return true}
   return false;
 }
