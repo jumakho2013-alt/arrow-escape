@@ -84,7 +84,9 @@ const C=document.getElementById('c'),X=C.getContext('2d');
 const W=390,H=844;
 // Single source of truth for the displayed app version. Bump alongside
 // CFBundleShortVersionString in ios/App/App.xcodeproj/project.pbxproj.
-const APP_VERSION='v1.0.9';
+const APP_VERSION='v1.0.11';
+// App Store deep link — used by the in-app "update available" nudge.
+const APP_STORE_URL='https://apps.apple.com/app/stray-arrows/id6763406927';
 const PI=Math.PI,TAU=PI*2,sin=Math.sin,cos=Math.cos,abs=Math.abs,floor=Math.floor,min=Math.min,max=Math.max,sqrt=Math.sqrt;
 const rnd=(a=0,b=1)=>Math.random()*(b-a)+a;
 const rndI=(a,b)=>floor(rnd(a,b+1));
@@ -189,15 +191,15 @@ const LANGS=[
   {code:'ja',name:'日本語'},
 ];
 const STR={
-  en:{title1:'STRAY',title2:'ARROWS',tagline:'puzzle game',play:'PLAY',levels:'LEVELS',daily:'DAILY',weekly:'WEEKLY',stats:'STATS',achievements:'ACHIEVEMENTS',settings:'SETTINGS',sound:'Sound',theme:'Theme',themeDark:'Dark',themeLight:'Light',language:'Language',watchAd:'Watch Ad',coins:'Coins',resetProgress:'Reset Progress',areYouSure:'Are you sure?',yesReset:'YES, RESET',cancel:'CANCEL',back:'BACK',hint:'HINT',skip:'SKIP',level:'LEVEL',stars:'STARS',streak:'STREAK',trophy:'TROPHY',on:'ON',off:'OFF',nextLevel:'NEXT LEVEL',replay:'REPLAY',home:'HOME',gameOver:'GAME OVER',outOfHearts:'You ran out of hearts',retry:'RETRY',continueBtn:'CONTINUE',adUnavailable:'Ad unavailable, try later',},
-  ru:{title1:'STRAY',title2:'ARROWS',tagline:'головоломка',play:'ИГРАТЬ',levels:'УРОВНИ',daily:'ДЕНЬ',weekly:'НЕДЕЛЯ',stats:'СТАТЫ',achievements:'ДОСТИЖЕНИЯ',settings:'НАСТРОЙКИ',sound:'Звук',theme:'Тема',themeDark:'Тёмная',themeLight:'Светлая',language:'Язык',watchAd:'Смотреть рекламу',coins:'монет',resetProgress:'Сбросить прогресс',areYouSure:'Вы уверены?',yesReset:'ДА, СБРОСИТЬ',cancel:'ОТМЕНА',back:'НАЗАД',hint:'ПОДСКАЗКА',skip:'ПРОПУСК',level:'УРОВ',stars:'ЗВЁЗД',streak:'СЕРИЯ',trophy:'КУБОК',on:'ВКЛ',off:'ВЫКЛ',nextLevel:'СЛЕД. УРОВЕНЬ',replay:'ЗАНОВО',home:'ДОМОЙ',gameOver:'ИГРА ОКОНЧЕНА',outOfHearts:'Закончились жизни',retry:'ПОВТОР',continueBtn:'ПРОДОЛЖИТЬ',adUnavailable:'Реклама недоступна',},
-  es:{title1:'STRAY',title2:'ARROWS',tagline:'juego de puzzle',play:'JUGAR',levels:'NIVELES',daily:'DIARIO',weekly:'SEMANAL',stats:'STATS',achievements:'LOGROS',settings:'AJUSTES',sound:'Sonido',theme:'Tema',themeDark:'Oscuro',themeLight:'Claro',language:'Idioma',watchAd:'Ver anuncio',coins:'monedas',resetProgress:'Reiniciar',areYouSure:'¿Estás seguro?',yesReset:'SÍ, REINICIAR',cancel:'CANCELAR',back:'ATRÁS',hint:'PISTA',skip:'SALTAR',level:'NIVEL',stars:'ESTR',streak:'RACHA',trophy:'COPA',on:'ON',off:'OFF',nextLevel:'SIGUIENTE',replay:'REPETIR',home:'INICIO',gameOver:'FIN',outOfHearts:'Sin vidas',retry:'REINTENTAR',continueBtn:'CONTINUAR',adUnavailable:'Anuncio no disponible',},
-  de:{title1:'STRAY',title2:'ARROWS',tagline:'Puzzlespiel',play:'SPIELEN',levels:'LEVEL',daily:'TAG',weekly:'WOCHE',stats:'STATS',achievements:'ERFOLGE',settings:'EINSTELL.',sound:'Ton',theme:'Theme',themeDark:'Dunkel',themeLight:'Hell',language:'Sprache',watchAd:'Werbung ansehen',coins:'Münzen',resetProgress:'Zurücksetzen',areYouSure:'Sicher?',yesReset:'JA, RESET',cancel:'ABBR.',back:'ZURÜCK',hint:'TIPP',skip:'ÜBERSPR.',level:'LVL',stars:'STERNE',streak:'SERIE',trophy:'POKAL',on:'AN',off:'AUS',nextLevel:'WEITER',replay:'NEU',home:'HOME',gameOver:'GAME OVER',outOfHearts:'Keine Herzen mehr',retry:'NEU',continueBtn:'WEITER',adUnavailable:'Werbung nicht verfügbar',},
-  fr:{title1:'STRAY',title2:'ARROWS',tagline:'jeu de puzzle',play:'JOUER',levels:'NIVEAUX',daily:'JOUR',weekly:'SEMAINE',stats:'STATS',achievements:'SUCCÈS',settings:'PARAM.',sound:'Son',theme:'Thème',themeDark:'Sombre',themeLight:'Clair',language:'Langue',watchAd:'Voir pub',coins:'pièces',resetProgress:'Réinitialiser',areYouSure:'Sûr ?',yesReset:'OUI, RESET',cancel:'ANNULER',back:'RETOUR',hint:'INDICE',skip:'PASSER',level:'NIV',stars:'ÉTOILES',streak:'SÉRIE',trophy:'COUPE',on:'ON',off:'OFF',nextLevel:'SUIVANT',replay:'REJOUER',home:'ACCUEIL',gameOver:'PERDU',outOfHearts:'Plus de vies',retry:'REJOUER',continueBtn:'CONTINUER',adUnavailable:'Pub indisponible',},
-  pt:{title1:'STRAY',title2:'ARROWS',tagline:'jogo de puzzle',play:'JOGAR',levels:'NÍVEIS',daily:'DIA',weekly:'SEMANA',stats:'STATS',achievements:'CONQUISTAS',settings:'AJUSTES',sound:'Som',theme:'Tema',themeDark:'Escuro',themeLight:'Claro',language:'Idioma',watchAd:'Ver anúncio',coins:'moedas',resetProgress:'Resetar',areYouSure:'Tem certeza?',yesReset:'SIM, RESET',cancel:'CANCELAR',back:'VOLTAR',hint:'DICA',skip:'PULAR',level:'NÍV',stars:'ESTR',streak:'SEQ',trophy:'TROFÉU',on:'ON',off:'OFF',nextLevel:'PRÓXIMO',replay:'REPETIR',home:'INÍCIO',gameOver:'FIM',outOfHearts:'Sem vidas',retry:'TENTAR',continueBtn:'CONTINUAR',adUnavailable:'Anúncio indisponível',},
-  it:{title1:'STRAY',title2:'ARROWS',tagline:'gioco di puzzle',play:'GIOCA',levels:'LIVELLI',daily:'GIORNO',weekly:'SETT.',stats:'STATS',achievements:'TROFEI',settings:'IMPOST.',sound:'Audio',theme:'Tema',themeDark:'Scuro',themeLight:'Chiaro',language:'Lingua',watchAd:'Guarda pub',coins:'monete',resetProgress:'Reset',areYouSure:'Sei sicuro?',yesReset:'SÌ, RESET',cancel:'ANNULLA',back:'INDIETRO',hint:'AIUTO',skip:'SALTA',level:'LV',stars:'STELLE',streak:'SERIE',trophy:'COPPA',on:'ON',off:'OFF',nextLevel:'PROSSIMO',replay:'RIGIOCA',home:'HOME',gameOver:'FINE',outOfHearts:'Niente vite',retry:'RIPROVA',continueBtn:'CONTINUA',adUnavailable:'Pubblicità non disponibile',},
-  tr:{title1:'STRAY',title2:'ARROWS',tagline:'bulmaca oyunu',play:'OYNA',levels:'BÖLÜMLER',daily:'GÜNLÜK',weekly:'HAFTALIK',stats:'STATS',achievements:'BAŞARIMLAR',settings:'AYARLAR',sound:'Ses',theme:'Tema',themeDark:'Koyu',themeLight:'Açık',language:'Dil',watchAd:'Reklam izle',coins:'jeton',resetProgress:'Sıfırla',areYouSure:'Emin misin?',yesReset:'EVET, SIFIRLA',cancel:'İPTAL',back:'GERİ',hint:'İPUCU',skip:'ATLA',level:'LV',stars:'YILDIZ',streak:'SERİ',trophy:'KUPA',on:'AÇIK',off:'KAPALI',nextLevel:'SONRAKİ',replay:'TEKRAR',home:'ANA',gameOver:'BİTTİ',outOfHearts:'Can kalmadı',retry:'TEKRAR',continueBtn:'DEVAM',adUnavailable:'Reklam mevcut değil',},
-  ja:{title1:'STRAY',title2:'ARROWS',tagline:'パズルゲーム',play:'プレイ',levels:'レベル',daily:'デイリー',weekly:'ウィークリー',stats:'統計',achievements:'実績',settings:'設定',sound:'サウンド',theme:'テーマ',themeDark:'ダーク',themeLight:'ライト',language:'言語',watchAd:'広告を見る',coins:'コイン',resetProgress:'リセット',areYouSure:'よろしいですか?',yesReset:'はい、リセット',cancel:'キャンセル',back:'戻る',hint:'ヒント',skip:'スキップ',level:'LV',stars:'★',streak:'連続',trophy:'トロフィー',on:'オン',off:'オフ',nextLevel:'次へ',replay:'リプレイ',home:'ホーム',gameOver:'ゲームオーバー',outOfHearts:'ライフ切れ',retry:'リトライ',continueBtn:'続ける',adUnavailable:'広告利用不可',},
+  en:{title1:'STRAY',title2:'ARROWS',tagline:'puzzle game',play:'PLAY',levels:'LEVELS',daily:'DAILY',weekly:'WEEKLY',stats:'STATS',achievements:'ACHIEVEMENTS',settings:'SETTINGS',sound:'Sound',theme:'Theme',themeDark:'Dark',themeLight:'Light',language:'Language',watchAd:'Watch Ad',coins:'Coins',resetProgress:'Reset Progress',areYouSure:'Are you sure?',yesReset:'YES, RESET',cancel:'CANCEL',back:'BACK',hint:'HINT',skip:'SKIP',level:'LEVEL',stars:'STARS',streak:'STREAK',trophy:'TROPHY',on:'ON',off:'OFF',nextLevel:'NEXT LEVEL',replay:'REPLAY',home:'HOME',gameOver:'GAME OVER',outOfHearts:'You ran out of hearts',retry:'RETRY',continueBtn:'CONTINUE',adUnavailable:'Ad unavailable, try later',updateAvailable:'Update available',},
+  ru:{title1:'STRAY',title2:'ARROWS',tagline:'головоломка',play:'ИГРАТЬ',levels:'УРОВНИ',daily:'ДЕНЬ',weekly:'НЕДЕЛЯ',stats:'СТАТЫ',achievements:'ДОСТИЖЕНИЯ',settings:'НАСТРОЙКИ',sound:'Звук',theme:'Тема',themeDark:'Тёмная',themeLight:'Светлая',language:'Язык',watchAd:'Смотреть рекламу',coins:'монет',resetProgress:'Сбросить прогресс',areYouSure:'Вы уверены?',yesReset:'ДА, СБРОСИТЬ',cancel:'ОТМЕНА',back:'НАЗАД',hint:'ПОДСКАЗКА',skip:'ПРОПУСК',level:'УРОВ',stars:'ЗВЁЗД',streak:'СЕРИЯ',trophy:'КУБОК',on:'ВКЛ',off:'ВЫКЛ',nextLevel:'СЛЕД. УРОВЕНЬ',replay:'ЗАНОВО',home:'ДОМОЙ',gameOver:'ИГРА ОКОНЧЕНА',outOfHearts:'Закончились жизни',retry:'ПОВТОР',continueBtn:'ПРОДОЛЖИТЬ',adUnavailable:'Реклама недоступна',updateAvailable:'Доступно обновление',},
+  es:{title1:'STRAY',title2:'ARROWS',tagline:'juego de puzzle',play:'JUGAR',levels:'NIVELES',daily:'DIARIO',weekly:'SEMANAL',stats:'STATS',achievements:'LOGROS',settings:'AJUSTES',sound:'Sonido',theme:'Tema',themeDark:'Oscuro',themeLight:'Claro',language:'Idioma',watchAd:'Ver anuncio',coins:'monedas',resetProgress:'Reiniciar',areYouSure:'¿Estás seguro?',yesReset:'SÍ, REINICIAR',cancel:'CANCELAR',back:'ATRÁS',hint:'PISTA',skip:'SALTAR',level:'NIVEL',stars:'ESTR',streak:'RACHA',trophy:'COPA',on:'ON',off:'OFF',nextLevel:'SIGUIENTE',replay:'REPETIR',home:'INICIO',gameOver:'FIN',outOfHearts:'Sin vidas',retry:'REINTENTAR',continueBtn:'CONTINUAR',adUnavailable:'Anuncio no disponible',updateAvailable:'Actualización disponible',},
+  de:{title1:'STRAY',title2:'ARROWS',tagline:'Puzzlespiel',play:'SPIELEN',levels:'LEVEL',daily:'TAG',weekly:'WOCHE',stats:'STATS',achievements:'ERFOLGE',settings:'EINSTELL.',sound:'Ton',theme:'Theme',themeDark:'Dunkel',themeLight:'Hell',language:'Sprache',watchAd:'Werbung ansehen',coins:'Münzen',resetProgress:'Zurücksetzen',areYouSure:'Sicher?',yesReset:'JA, RESET',cancel:'ABBR.',back:'ZURÜCK',hint:'TIPP',skip:'ÜBERSPR.',level:'LVL',stars:'STERNE',streak:'SERIE',trophy:'POKAL',on:'AN',off:'AUS',nextLevel:'WEITER',replay:'NEU',home:'HOME',gameOver:'GAME OVER',outOfHearts:'Keine Herzen mehr',retry:'NEU',continueBtn:'WEITER',adUnavailable:'Werbung nicht verfügbar',updateAvailable:'Update verfügbar',},
+  fr:{title1:'STRAY',title2:'ARROWS',tagline:'jeu de puzzle',play:'JOUER',levels:'NIVEAUX',daily:'JOUR',weekly:'SEMAINE',stats:'STATS',achievements:'SUCCÈS',settings:'PARAM.',sound:'Son',theme:'Thème',themeDark:'Sombre',themeLight:'Clair',language:'Langue',watchAd:'Voir pub',coins:'pièces',resetProgress:'Réinitialiser',areYouSure:'Sûr ?',yesReset:'OUI, RESET',cancel:'ANNULER',back:'RETOUR',hint:'INDICE',skip:'PASSER',level:'NIV',stars:'ÉTOILES',streak:'SÉRIE',trophy:'COUPE',on:'ON',off:'OFF',nextLevel:'SUIVANT',replay:'REJOUER',home:'ACCUEIL',gameOver:'PERDU',outOfHearts:'Plus de vies',retry:'REJOUER',continueBtn:'CONTINUER',adUnavailable:'Pub indisponible',updateAvailable:'Mise à jour dispo',},
+  pt:{title1:'STRAY',title2:'ARROWS',tagline:'jogo de puzzle',play:'JOGAR',levels:'NÍVEIS',daily:'DIA',weekly:'SEMANA',stats:'STATS',achievements:'CONQUISTAS',settings:'AJUSTES',sound:'Som',theme:'Tema',themeDark:'Escuro',themeLight:'Claro',language:'Idioma',watchAd:'Ver anúncio',coins:'moedas',resetProgress:'Resetar',areYouSure:'Tem certeza?',yesReset:'SIM, RESET',cancel:'CANCELAR',back:'VOLTAR',hint:'DICA',skip:'PULAR',level:'NÍV',stars:'ESTR',streak:'SEQ',trophy:'TROFÉU',on:'ON',off:'OFF',nextLevel:'PRÓXIMO',replay:'REPETIR',home:'INÍCIO',gameOver:'FIM',outOfHearts:'Sem vidas',retry:'TENTAR',continueBtn:'CONTINUAR',adUnavailable:'Anúncio indisponível',updateAvailable:'Atualização disponível',},
+  it:{title1:'STRAY',title2:'ARROWS',tagline:'gioco di puzzle',play:'GIOCA',levels:'LIVELLI',daily:'GIORNO',weekly:'SETT.',stats:'STATS',achievements:'TROFEI',settings:'IMPOST.',sound:'Audio',theme:'Tema',themeDark:'Scuro',themeLight:'Chiaro',language:'Lingua',watchAd:'Guarda pub',coins:'monete',resetProgress:'Reset',areYouSure:'Sei sicuro?',yesReset:'SÌ, RESET',cancel:'ANNULLA',back:'INDIETRO',hint:'AIUTO',skip:'SALTA',level:'LV',stars:'STELLE',streak:'SERIE',trophy:'COPPA',on:'ON',off:'OFF',nextLevel:'PROSSIMO',replay:'RIGIOCA',home:'HOME',gameOver:'FINE',outOfHearts:'Niente vite',retry:'RIPROVA',continueBtn:'CONTINUA',adUnavailable:'Pubblicità non disponibile',updateAvailable:'Aggiornamento disponibile',},
+  tr:{title1:'STRAY',title2:'ARROWS',tagline:'bulmaca oyunu',play:'OYNA',levels:'BÖLÜMLER',daily:'GÜNLÜK',weekly:'HAFTALIK',stats:'STATS',achievements:'BAŞARIMLAR',settings:'AYARLAR',sound:'Ses',theme:'Tema',themeDark:'Koyu',themeLight:'Açık',language:'Dil',watchAd:'Reklam izle',coins:'jeton',resetProgress:'Sıfırla',areYouSure:'Emin misin?',yesReset:'EVET, SIFIRLA',cancel:'İPTAL',back:'GERİ',hint:'İPUCU',skip:'ATLA',level:'LV',stars:'YILDIZ',streak:'SERİ',trophy:'KUPA',on:'AÇIK',off:'KAPALI',nextLevel:'SONRAKİ',replay:'TEKRAR',home:'ANA',gameOver:'BİTTİ',outOfHearts:'Can kalmadı',retry:'TEKRAR',continueBtn:'DEVAM',adUnavailable:'Reklam mevcut değil',updateAvailable:'Güncelleme mevcut',},
+  ja:{title1:'STRAY',title2:'ARROWS',tagline:'パズルゲーム',play:'プレイ',levels:'レベル',daily:'デイリー',weekly:'ウィークリー',stats:'統計',achievements:'実績',settings:'設定',sound:'サウンド',theme:'テーマ',themeDark:'ダーク',themeLight:'ライト',language:'言語',watchAd:'広告を見る',coins:'コイン',resetProgress:'リセット',areYouSure:'よろしいですか?',yesReset:'はい、リセット',cancel:'キャンセル',back:'戻る',hint:'ヒント',skip:'スキップ',level:'LV',stars:'★',streak:'連続',trophy:'トロフィー',on:'オン',off:'オフ',nextLevel:'次へ',replay:'リプレイ',home:'ホーム',gameOver:'ゲームオーバー',outOfHearts:'ライフ切れ',retry:'リトライ',continueBtn:'続ける',adUnavailable:'広告利用不可',updateAvailable:'アップデート利用可',},
 };
 let lang=localStorage.getItem('ae_lang')||(navigator.language||'en').slice(0,2);
 if(!STR[lang])lang='en';
@@ -344,6 +346,55 @@ const sfx={
 };
 
 // ================================================================
+//  AUTO-UPDATE CHECK
+// Polls Apple's iTunes lookup API once per day to detect a newer App Store
+// version. iOS auto-update is on by default for most users, but ~30% have
+// it off OR are on cellular and it lags days. A small in-menu nudge gets
+// critical fixes (AdMob, anti-farm) deployed faster.
+// Android equivalent (Play Store) has no public lookup API — skipped there.
+// ================================================================
+let availableUpdate=null; // version string like "1.0.12" if newer is live
+function _semverGt(a,b){
+  const ap=a.split('.').map(n=>+n||0);
+  const bp=b.split('.').map(n=>+n||0);
+  for(let i=0;i<max(ap.length,bp.length);i++){
+    if((ap[i]||0)>(bp[i]||0))return true;
+    if((ap[i]||0)<(bp[i]||0))return false;
+  }
+  return false;
+}
+async function checkForUpdate(){
+  // Only iOS — Android has no equivalent simple endpoint
+  if(typeof Capacitor!=='undefined'&&Capacitor.getPlatform&&Capacitor.getPlatform()==='android')return;
+  // 24h cache so we don't hammer iTunes on every launch
+  const lastCheck=+localStorage.getItem('ae_update_check')||0;
+  if(Date.now()-lastCheck<24*3600*1000){
+    const cached=localStorage.getItem('ae_update_avail');
+    if(cached)availableUpdate=cached;
+    return;
+  }
+  try{
+    const r=await fetch('https://itunes.apple.com/lookup?bundleId=strayarrows.puzzle');
+    const data=await r.json();
+    const storeVersion=data.results&&data.results[0]&&data.results[0].version;
+    const myVersion=APP_VERSION.replace(/^v/,'');
+    if(storeVersion&&_semverGt(storeVersion,myVersion)){
+      availableUpdate=storeVersion;
+      try{localStorage.setItem('ae_update_avail',storeVersion)}catch(e){}
+    }else{
+      try{localStorage.removeItem('ae_update_avail')}catch(e){}
+    }
+    try{localStorage.setItem('ae_update_check',String(Date.now()))}catch(e){}
+  }catch(e){/* offline / blocked / iTunes lag — silent */}
+}
+// Defer so it doesn't compete with first-render or AdMob init
+setTimeout(checkForUpdate,3000);
+function openAppStore(){
+  // window.open redirects iOS to the App Store app via apps.apple.com URL
+  try{window.open(APP_STORE_URL,'_blank')}catch(e){}
+}
+
+// ================================================================
 //  INPUT
 // ================================================================
 let tapX=0,tapY=0,tapped=false,mx=W/2,my=H/2;
@@ -375,8 +426,12 @@ let totalStars=Object.values(stars).reduce((a,b)=>a+b,0);
 let maxLevel=+localStorage.getItem('ae_maxlevel')||level;
 {const starKeys=Object.keys(stars).map(Number).filter(n=>n>0);
 if(starKeys.length>0)maxLevel=max(maxLevel,max(...starKeys)+1)}
-// New players start with 60 coins — enough for one hint + a taste of the economy
-let coins=localStorage.getItem('ae_coins')!=null?(+localStorage.getItem('ae_coins')):60;
+// New players start with 150 coins — enough to BUY one hint (100) and still
+// have a buffer. The previous 60 was below HINT_COST, so a struggling new
+// player on level 1 couldn't try a hint without watching an ad first → bad
+// first-time UX, contributed to D1 churn (per audit).
+const STARTING_COINS=150;
+let coins=localStorage.getItem('ae_coins')!=null?(+localStorage.getItem('ae_coins')):STARTING_COINS;
 
 // Current level state
 // arrows: array of {cells:[[r,c],...], dir:0-3, alive:true}
@@ -387,10 +442,20 @@ let gridCols=4,gridRows=4;
 let moves=0,minMoves=0;
 let timer=0;
 let undosLeft=3;
+// Coins paid out for the most recent level completion. Read by drawComplete
+// so daily/weekly replays display "+0 / claimed" instead of advertising the
+// full reward when the player isn't actually getting it.
+let lastGained=0;
 let anims=[]; // flying arrow animations
 let shakeAnims=[]; // blocked shake animations
 let confetti=[]; // completion confetti
-let gt=0; // game time
+let gt=0; // game time (seconds since boot)
+// Frame delta in seconds. Set by loop() every frame. Module-level so draw
+// helpers and animation update code can advance time-based values without
+// assuming 60fps — on iPhone Pro models the screen runs at 120Hz, and the
+// previous `+= 1/60` pattern made gameplay (timer, animations) run at 2x
+// speed on those devices, breaking record times.
+let dt=1/60;
 let levelSeed=0;
 let streak=0; // levels without undo
 let bestTime=0;
@@ -400,6 +465,7 @@ let hintTime=0; // remaining hint animation seconds
 let pendingState=null; // state change queued during fade-out
 let levelRevealT=0; // 0→1 over ~0.8s after a level starts (staggered fade-in)
 let levelsPage=0; // current page in level select
+let achPage=0; // current page in achievements list
 let isDaily=false; // true when playing the daily challenge
 let isWeekly=false; // true when playing the weekly challenge
 let dailySeed=0;
@@ -445,7 +511,7 @@ function spawnFloater(x,y,text,color){
 function drawFloaters(){
   for(let i=floaters.length-1;i>=0;i--){
     const f=floaters[i];
-    f.t+=1/60;
+    f.t+=dt;
     if(f.t>=f.dur){floaters.splice(i,1);continue}
     const p=f.t/f.dur;
     const alpha=p<.15?p/.15:(p>.75?(1-p)/.25:1);
@@ -750,9 +816,12 @@ function continueFromGameover(){
   return true;
 }
 
-// Skip current level for a fat coin cost — marks 1 star and advances
+// Skip current level for a fat coin cost — marks 1 star and advances.
+// Disabled for daily/weekly: those are challenge modes with fixed seeds and
+// no `level` progression — skipping them would bump the global `level` while
+// leaving `isDaily`/`isWeekly` flags set, breaking state on next entry.
 function skipLevel(){
-  if(coins<SKIP_COST||isDaily)return false;
+  if(coins<SKIP_COST||isDaily||isWeekly)return false;
   coins-=SKIP_COST;
   stars[level]=max(stars[level]||0,1);
   totalStars=Object.values(stars).reduce((a,b)=>a+b,0);
@@ -794,15 +863,17 @@ function generateLevel(lvl,customSeed){
   levelRevealT=0;
   updateStreak();
 
-  // Unlimited levels. Difficulty ramps from level 1 to ~500, then stays at max.
-  // Level 1 = gentle intro (8×11, ~15 arrows, big cells).
-  // Level 500+ = extreme dense maze (34×48, ~300+ arrows, tiny cells).
-  // Arrowheads ALWAYS visible — complexity comes from density, not hidden info.
-  const p=min(1,(lvl-1)/499);
-  const cols=floor(lrp(8,24,p)+.5);
-  const rows=floor(lrp(11,32,p)+.5);
+  // Unlimited levels. Difficulty ramps from level 1 to ~250, then stays at max.
+  // Previous ramp (1→500) was too gentle — players reported level 100 felt no
+  // harder than level 30. Halving the ramp range makes each 10-level block a
+  // noticeable jump in density / arrow length.
+  // Level 1   = gentle intro (10×13, short arrows, ample space)
+  // Level 250+= extreme dense maze (24×32, max length 30)
+  const p=min(1,(lvl-1)/249);
+  const cols=floor(lrp(10,24,p)+.5);
+  const rows=floor(lrp(13,32,p)+.5);
   const minLen=2; // always accept short arrows to fill tight spaces
-  const maxLen=floor(lrp(8,30,p)+.5); // longer max = more space filled per arrow
+  const maxLen=floor(lrp(10,30,p)+.5); // longer max = more space filled per arrow
 
   gridCols=cols;gridRows=rows;
 
@@ -1090,6 +1161,7 @@ function tapArrowByIndex(idx){
         }
         coins+=gained;
         totalCoinsEarned+=gained;
+        lastGained=gained;
         if(gained>0)spawnFloater(W/2,H*.58,'+'+gained);
         checkAchievements({
           level,stars:s,totalStars,streakDays,coins,perfect,isDaily,
@@ -1107,14 +1179,29 @@ function tapArrowByIndex(idx){
     const sy=gy+head[0]*cs+cs/2;
     shakeAnims.push({x:sx,y:sy,idx,t:0,dur:.2});
     sfx.blocked();haptic([5,30,5]);
-    undosLeft--;
-    // Visual feedback: floating "-1 ❤" near the head
-    spawnFloater(sx,sy-cs*.6,'-1',TH.arrowBlock);
-    if(undosLeft<=0){
-      inputLocked=true;
-      setTimeout(()=>{S='gameover';sfx.gameover();inputLocked=false},500);
+    if(isTutorial()){
+      // Tutorial mode (levels 1-TUTORIAL_LEVELS): wrong tap is a teaching
+      // moment, not a punishment. Player sees the shake + blocked sfx,
+      // then the highlighted next arrow re-pulses so they can try again.
+      spawnFloater(sx,sy-cs*.6,'blocked',TH.arrowBlock);
+    }else{
+      undosLeft--;
+      spawnFloater(sx,sy-cs*.6,'-1',TH.arrowBlock);
+      if(undosLeft<=0){
+        inputLocked=true;
+        setTimeout(()=>{S='gameover';sfx.gameover();inputLocked=false},500);
+      }
     }
   }
+}
+
+// First TUTORIAL_LEVELS regular levels are no-penalty teaching levels:
+// wrong taps don't drain hearts and the next solvable arrow is always
+// pulse-highlighted. Daily/weekly are excluded — those are challenges,
+// not introductions.
+const TUTORIAL_LEVELS=3;
+function isTutorial(){
+  return level<=TUTORIAL_LEVELS&&!isDaily&&!isWeekly;
 }
 
 
@@ -1451,9 +1538,9 @@ function drawMenu(){
     });
   }
   for(const a of window._bgArrows){
-    a.life+=1/60/a.dur;
-    a.x+=DX[a.dir]*a.spd*(1/60);
-    a.y+=DY[a.dir]*a.spd*(1/60);
+    a.life+=dt/a.dur;
+    a.x+=DX[a.dir]*a.spd*dt;
+    a.y+=DY[a.dir]*a.spd*dt;
     // Fade in first 20%, full middle, fade out last 20%
     const lp=a.life%1;
     const fade=lp<.2?lp/.2:(lp>.8?(1-lp)/.2:1);
@@ -1519,7 +1606,7 @@ function drawMenu(){
   if(drawBtn(t('stats'),gX+bW/2+bGapX/2,gY2,bW,bH)){goto('stats')}
   // Wide achievements button
   if(drawBtn(t('achievements')+' ('+achUnlockedCount()+'/'+ACHIEVEMENTS.length+')',W/2,gY2+bH+bGapY+8,bW*2+bGapX,bH)){
-    goto('achievements');
+    goto('achievements',()=>{achPage=0});
   }
 
   // Settings gear top-right — y is safe-area-aware so it adapts to any
@@ -1539,6 +1626,21 @@ function drawMenu(){
   const _topY=Math.max(55,safeTop+19);
   drawCoin(36,_topY,7);
   txt(coins+'',52,_topY,13,TH.star,'left');
+
+  // "Update available" nudge — shown only when checkForUpdate() found a
+  // newer App Store version (cached 24h). Tap → opens App Store.
+  if(availableUpdate){
+    const bY=H*.91,bW=240,bH=28;
+    const hv=abs(mx-W/2)<bW/2&&abs(my-bY)<bH/2;
+    X.fillStyle=hv?TH.accent+'40':TH.accent+'25';
+    X.beginPath();X.roundRect(W/2-bW/2,bY-bH/2,bW,bH,bH/2);X.fill();
+    X.strokeStyle=TH.accent+'80';X.lineWidth=1;
+    X.beginPath();X.roundRect(W/2-bW/2,bY-bH/2,bW,bH,bH/2);X.stroke();
+    txt(t('updateAvailable')+' v'+availableUpdate,W/2,bY,11,TH.accent);
+    if(tapped&&abs(tapX-W/2)<bW/2&&abs(tapY-bY)<bH/2){
+      sfx.tap();haptic(8);openAppStore();tapped=false;
+    }
+  }
 
   txt(APP_VERSION,W/2,H*.96,10,TH.textDim);
 }
@@ -1584,7 +1686,7 @@ function drawPlay(){
   }
 
   // Advance level reveal animation (staggered fade-in of all arrows)
-  if(levelRevealT<1)levelRevealT=min(1,levelRevealT+1/60/.9);
+  if(levelRevealT<1)levelRevealT=min(1,levelRevealT+dt/.9);
 
   // Draw all alive arrows as continuous paths through their cells
   for(let i=0;i<arrows.length;i++){
@@ -1626,19 +1728,17 @@ function drawPlay(){
   }
 
   // Tick down hint timer
-  if(hintTime>0){hintTime-=1/60;if(hintTime<=0)hintArrow=-1}
+  if(hintTime>0){hintTime-=dt;if(hintTime<=0)hintArrow=-1}
 
-  // Tutorial on level 1 — show after reveal animation completes
-  if(level===1&&!isDaily&&!isWeekly&&levelRevealT>=1&&moves===0){
+  // Tutorial — first TUTORIAL_LEVELS regular levels permanently highlight
+  // the next solvable arrow until the level is cleared. Combined with the
+  // no-penalty wrong-tap handling in tapArrowByIndex(), this gives new
+  // players room to learn the "clear path" rule without losing hearts.
+  if(isTutorial()&&levelRevealT>=1){
     let tutIdx=-1;
-    let aliveCount=0;
     for(let i=0;i<arrows.length;i++){
-      if(arrows[i].alive){
-        aliveCount++;
-        if(tutIdx<0&&canEscape(i))tutIdx=i;
-      }
+      if(arrows[i].alive&&canEscape(i)){tutIdx=i;break}
     }
-    const totalCount=arrows.length;
 
     if(tutIdx>=0){
       const pulse=.5+.5*sin(gt*4);
@@ -1654,7 +1754,7 @@ function drawPlay(){
 
       // Short dashed line (5-6 dashes) + small arrowhead at end
       const dir=ta.dir;
-      const lineLen=min(cs*2.5,60); // 5-6 dashes max, never goes past hearts
+      const lineLen=min(cs*2.5,60);
       const endX=hx+DX[dir]*lineLen,endY=hy+DY[dir]*lineLen;
       X.strokeStyle=TH.star;
       X.lineWidth=2;
@@ -1665,7 +1765,6 @@ function drawPlay(){
       X.lineTo(endX,endY);
       X.stroke();
       X.setLineDash([]);
-      // Small arrowhead at end of dashed line
       const aLen=8,aW=5;
       X.fillStyle=TH.star;
       X.beginPath();
@@ -1675,11 +1774,11 @@ function drawPlay(){
       X.closePath();X.fill();
       X.globalAlpha=1;
 
-      // Text
-      txt('Tap this arrow',W/2,76,14,TH.star,'center','700');
-      txt('It has a clear path to the edge',W/2,94,11,darkMode?'#aaa':'#666');
-    }else if(moves>0&&moves<4){
-      txt('Great! Keep going!',W/2,76,14,TH.success,'center','700');
+      // Text — only at start of level so it doesn't keep nagging
+      if(moves===0){
+        txt('Tap this arrow',W/2,76,14,TH.star,'center','700');
+        txt('It has a clear path to the edge',W/2,94,11,darkMode?'#aaa':'#666');
+      }
     }
   }
 
@@ -1703,7 +1802,7 @@ function drawPlay(){
   // then continues straight off-screen past the head.
   for(let i=anims.length-1;i>=0;i--){
     const an=anims[i];
-    an.t+=1/60;
+    an.t+=dt;
     if(an.t>=an.dur){anims.splice(i,1);continue}
 
     // Use pre-built path cached on anim creation (rebuilt every frame before).
@@ -1721,7 +1820,7 @@ function drawPlay(){
 
   // Shake animations
   for(let i=shakeAnims.length-1;i>=0;i--){
-    shakeAnims[i].t+=1/60;
+    shakeAnims[i].t+=dt;
     if(shakeAnims[i].t>=shakeAnims[i].dur)shakeAnims.splice(i,1);
   }
 
@@ -1756,15 +1855,15 @@ function drawPlay(){
     if(canHint)useHint();
     tapped=false;
   }
-  const canSkip=coins>=SKIP_COST&&!isDaily;
+  const canSkip=coins>=SKIP_COST&&!isDaily&&!isWeekly;
   if(_drawActionBtn(W*.725,t('skip'),SKIP_COST,canSkip,TH.warning)){
     if(canSkip)skipLevel();
     tapped=false;
   }
 
   // Update timers
-  timer+=1/60;
-  totalPlayTime+=1/60;
+  timer+=dt;
+  totalPlayTime+=dt;
 
 
 }
@@ -1773,10 +1872,13 @@ function drawPlay(){
 function drawComplete(){
   drawBg();
 
-  // Confetti
+  // Confetti — particle velocities/gravity were tuned at 60fps so we scale
+  // them by `dt*60` to keep the same visual speed at any refresh rate.
+  // life is decremented in seconds (dt) directly.
+  const _frameScale=dt*60;
   for(let i=confetti.length-1;i>=0;i--){
     const p=confetti[i];
-    p.x+=p.vx;p.y+=p.vy;p.vy+=.08;p.rot+=p.rv*.02;p.life-=1/60;
+    p.x+=p.vx*_frameScale;p.y+=p.vy*_frameScale;p.vy+=.08*_frameScale;p.rot+=p.rv*.02*_frameScale;p.life-=dt;
     if(p.life<=0){confetti.splice(i,1);continue}
     X.globalAlpha=clp(p.life,0,1);
     X.fillStyle=p.col;
@@ -1812,10 +1914,15 @@ function drawComplete(){
     txt('Best: '+floor(bestTime)+'s',W/2,H*.53,11,TH.textDim);
   }
 
-  // Coins earned
-  const coinReward=isWeekly?WEEKLY_REWARD:(isDaily?DAILY_REWARD:5+s*5);
-  drawCoin(W/2-22,H*.60,9);
-  txtP('+'+coinReward,W/2+8,H*.60,16,TH.star);
+  // Coins earned. Read the actual `lastGained` set in the win check so daily
+  // and weekly replays show "Already claimed" instead of an inflated reward
+  // the player isn't actually getting (per audit: misleading UI on replay).
+  if((isDaily||isWeekly)&&lastGained===0){
+    txt('Already claimed today',W/2,H*.60,12,TH.textDim);
+  }else{
+    drawCoin(W/2-22,H*.60,9);
+    txtP('+'+lastGained,W/2+8,H*.60,16,TH.star);
+  }
 
   // Buttons — daily/weekly return to menu; normal level goes to next
   if(isDaily||isWeekly){
@@ -1979,6 +2086,10 @@ function drawAchIcon(id,cx,cy,sz,col){
 }
 
 // --- ACHIEVEMENTS LIST ---
+// Paginated: 9 cards per page so all 18 achievements are reachable in 2
+// pages. Old version clipped at y > H-70 — silently hid 7 of 18 with no
+// affordance (per audit).
+const ACH_PER_PAGE=9;
 function drawAchievements(){
   drawBg();
   txtP('ACHIEVEMENTS',W/2,62,22,TH.text);
@@ -1988,12 +2099,18 @@ function drawAchievements(){
   drawCoin(W-50,64,7);
   txt(coins+'',W-40,64,13,TH.star,'left');
 
-  // List
+  // Page bounds
+  const pageCount=max(1,Math.ceil(ACHIEVEMENTS.length/ACH_PER_PAGE));
+  if(achPage>=pageCount)achPage=pageCount-1;
+  if(achPage<0)achPage=0;
+  const fromIdx=achPage*ACH_PER_PAGE;
+  const toIdx=min(ACHIEVEMENTS.length,fromIdx+ACH_PER_PAGE);
+
+  // List (visible page only)
   const startY=110,cardH=56,cardGap=8,cardW=W-40,cardX=20;
-  for(let i=0;i<ACHIEVEMENTS.length;i++){
+  for(let i=fromIdx;i<toIdx;i++){
     const a=ACHIEVEMENTS[i];
-    const y=startY+i*(cardH+cardGap);
-    if(y+cardH>H-70)break;
+    const y=startY+(i-fromIdx)*(cardH+cardGap);
     const done=!!achUnlocked[a.id];
     // Card
     X.fillStyle=done?TH.star+'18':TH.cardBg;
@@ -2006,12 +2123,23 @@ function drawAchievements(){
     txt(a.name,cardX+58,y+19,12,done?TH.text:TH.textSec,'left','700');
     txt(a.desc,cardX+58,y+38,10,done?TH.textSec:TH.textDim,'left');
     // Reward — RIGHT-anchored, "[coin] +N" inside card with 14px right padding.
-    // Was overflowing because text was 'left'-aligned starting at cardW+2.
     const rewardStr='+'+a.reward;
     const rightEdge=cardX+cardW-14;
     txt(rewardStr,rightEdge,y+cardH/2,11,done?TH.star:TH.textDim,'right');
     const textApproxW=rewardStr.length*6.5;
     drawCoin(rightEdge-textApproxW-7,y+cardH/2,6);
+  }
+
+  // Pagination — page indicator centered, prev/next on sides
+  if(pageCount>1){
+    const pagY=H-95;
+    txt((achPage+1)+' / '+pageCount,W/2,pagY,13,TH.textSec);
+    if(achPage>0){
+      if(drawBtn('‹',W/2-90,pagY,40,32)){achPage--}
+    }
+    if(achPage<pageCount-1){
+      if(drawBtn('›',W/2+90,pagY,40,32)){achPage++}
+    }
   }
 
   if(drawBtn('← '+t('back'),W/2,H-50,140,38)){goto('menu')}
@@ -2021,7 +2149,7 @@ function drawAchievements(){
 // Achievement unlock popup — animates at top of screen
 function drawAchPopup(){
   if(!achPopup)return;
-  achPopup.t+=1/60;
+  achPopup.t+=dt;
   const dur=3.5;
   if(achPopup.t>=dur){achPopup=null;return}
   const a=ACHIEVEMENTS.find(x=>x.id===achPopup.id);
@@ -2168,7 +2296,7 @@ function drawSettings(){
         if(k&&(k.startsWith('ae_best_')||k.startsWith('ae_daily_')||k.startsWith('ae_weekly_')))
           localStorage.removeItem(k);
       }
-      level=1;maxLevel=1;coins=60;stars={};totalStars=0;
+      level=1;maxLevel=1;coins=STARTING_COINS;stars={};totalStars=0;
       achUnlocked={};totalPerfect=0;totalDailies=0;noHintCount=0;
       totalCoinsEarned=0;streakDays=0;totalPlayTime=0;fastestLevel=99999;
       lastPlayDay=0;hintUsedThisLevel=false;
@@ -2337,7 +2465,9 @@ function goto(newState,action){
   pendingState={state:newState,action:action||null};
 }
 function loop(t){
-  const dt=min((t-_lastT)/1000,.05);_lastT=t;gt+=dt;
+  // Compute and publish frame delta to module scope so draw/animation code
+  // anywhere can use `dt` (was hardcoded `1/60` in 7+ spots).
+  dt=min((t-_lastT)/1000,.05);_lastT=t;gt+=dt;
 
   // Fade transition: fade-out then apply pending state then fade-in
   if(fadingOut){
