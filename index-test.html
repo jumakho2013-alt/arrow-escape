@@ -3042,7 +3042,8 @@ function drawSettings(){
     if(drawBtn(t('resetProgress'),W/2,425,200,44,TH.warning)){resetConfirm=true}
   }else{
     txt(t('areYouSure'),W/2,415,13,TH.warning);
-    if(drawBtn(t('yesReset'),W/2-60,455,110,40,TH.arrowBlock)){
+    // Wider than CANCEL because translations like "ДА, СБРОСИТЬ" / "SÍ, REINICIAR" / "EVET, SIFIRLA" overflow 110px.
+    if(drawBtn(t('yesReset'),W/2-72,455,134,40,TH.arrowBlock)){
       // Reset wipes PROGRESS keys only — language, sound, theme preferences
       // and system keys (lasterror, lastreject) are preserved.
       // KEY NAMES MUST MATCH save() in line ~386 — previous list used wrong
@@ -3066,7 +3067,7 @@ function drawSettings(){
       resetConfirm=false;save();
       goto('menu');
     }
-    if(drawBtn(t('cancel'),W/2+60,455,110,40)){resetConfirm=false}
+    if(drawBtn(t('cancel'),W/2+72,455,110,40)){resetConfirm=false}
   }
 
   if(drawBtn('← '+t('back'),W/2,H-60,140,38)){resetConfirm=false;goto('menu')}
