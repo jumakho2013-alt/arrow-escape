@@ -29,15 +29,40 @@
 *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;touch-action:none}
 html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;display:flex;justify-content:center;align-items:center;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Nunito',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
 /* No safe-area padding — canvas extends edge-to-edge under the notch.
-   Body bg matches canvas drawBg() top color so any letterbox area (when the
-   screen aspect ratio differs from 390:844) blends with the gradient. */
-body.light{background:#faf7f1}
-body.dark{background:#15152a}
+   Body bg shows a faint dot pattern in the letterbox area on tablets /
+   landscape, so the empty space doesn't feel empty. iPhone fills the
+   viewport with canvas so the body bg isn't visible there. */
+body.light{
+  background-color:#ede7d7;
+  background-image:radial-gradient(circle,rgba(0,0,0,.05) 1px,transparent 1px);
+  background-size:22px 22px;
+}
+body.dark{
+  background-color:#0d0d1f;
+  background-image:radial-gradient(circle,rgba(255,255,255,.05) 1px,transparent 1px);
+  background-size:22px 22px;
+}
 canvas{display:block}
+/* When the screen aspect ratio differs from 390:844 (iPad in either
+   orientation, desktop browser, etc.) the canvas doesn't fill the viewport.
+   Round its corners and lift it with a soft shadow so it reads as a
+   deliberate "floating game window" instead of a cropped panel.
+   resize() toggles `body.letterboxed` based on actual fit. */
+body.letterboxed canvas{
+  border-radius:18px;
+  box-shadow:0 10px 50px rgba(0,0,0,.18);
+}
 </style>
 </head>
 <body class="light">
 <canvas id="c"></canvas>
+<!-- Pre-baked levels 1..200. The improved procedural
+     generator is run at build time and the best-scoring layout for each
+     level number is frozen here. window.BAKED_LEVELS is consulted in
+     generateLevel() so every player sees the same puzzle for level N
+     (handcrafted-feel without manually designing 200 boards). Procedural
+     generation still runs for level 201+ and for daily/weekly seeds. -->
+<script src="levels-baked.js?v=1777583820"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -84,7 +109,7 @@ const C=document.getElementById('c'),X=C.getContext('2d');
 const W=390,H=844;
 // Single source of truth for the displayed app version. Bump alongside
 // CFBundleShortVersionString in ios/App/App.xcodeproj/project.pbxproj.
-const APP_VERSION='v1.0.13';
+const APP_VERSION='v1.0.14';
 // App Store deep link — used by the in-app "update available" nudge.
 const APP_STORE_URL='https://apps.apple.com/app/stray-arrows/id6763406927';
 const PI=Math.PI,TAU=PI*2,sin=Math.sin,cos=Math.cos,abs=Math.abs,floor=Math.floor,min=Math.min,max=Math.max,sqrt=Math.sqrt;
@@ -177,6 +202,10 @@ const TH={
   get btnHover(){return darkMode?'rgba(255,255,255,.14)':'rgba(255,255,255,.95)'},
 };
 
+function arrowColor(a,i){
+  return TH.arrow;
+}
+
 // ================================================================
 //  i18n — 9 languages
 // ================================================================
@@ -237,18 +266,34 @@ function _readSafeArea(){
 }
 function resize(){
   dpr=window.devicePixelRatio||1;
-  // Full-bleed: canvas always fills the entire viewport (edge-to-edge).
-  // The internal drawing surface stays 390x844 logical so game elements
-  // keep their layout, but the CSS box stretches to the device. On phones
-  // close to 390:844 ratio the stretch is imperceptible (~1-2%). Crucially,
-  // there's no visible body bg strip at top/bottom anymore — the gradient
-  // background painted by drawBg() reaches the screen edges, even under
-  // notch / status bar / nav bar. UI insets (safeTop/Bottom) are still
-  // honored in canvas-coords via the env() probe so nothing draws under
-  // system chrome. On iPad letterbox letterboxing was nice, but most users
-  // are on phones — the full-bleed look matters more.
+  // Hybrid layout. Two regimes:
+  //   1) Phones (aspect close to 390:844, ±25%): canvas fills the entire
+  //      viewport edge-to-edge — the gradient bg reaches under the notch,
+  //      no visible body strip. The slight stretch on phones with non-spec
+  //      aspect (SE, etc.) is imperceptible.
+  //   2) Tablets / desktop / strongly off-spec aspect (>25% diff): canvas
+  //      keeps the 390:844 ratio with letterbox bars on the sides. On iPad
+  //      portrait that means a centered "phone-shaped" board; on iPad
+  //      landscape the same shape sits in the middle. The letterbox area
+  //      shows the dot pattern from body bg, so the empty space reads as
+  //      a deliberate frame instead of an obvious crop.
   const winW=innerWidth||W,winH=innerHeight||H;
-  const cw=winW,ch=winH;
+  const wantRatio=W/H;
+  const winRatio=winW/winH;
+  const aspectDelta=Math.abs(winRatio-wantRatio)/wantRatio;
+  let cw,ch;
+  if(aspectDelta>.25){
+    document.body.classList.add('letterboxed');
+    // Strict 390:844 letterbox on tablet — canvas centered with side bars.
+    // The earlier "stretch to 0.62" experiment filled more iPad screen but
+    // broke iPhone proportions and made game elements look squashed; the
+    // user prefers the original look with side bars.
+    if(winRatio>wantRatio){ch=winH;cw=ch*wantRatio}
+    else{cw=winW;ch=cw/wantRatio}
+  }else{
+    document.body.classList.remove('letterboxed');
+    cw=winW;ch=winH;
+  }
   C.width=W*dpr;C.height=H*dpr;
   C.style.width=cw+'px';C.style.height=ch+'px';
   X.setTransform(dpr,0,0,dpr,0,0);
@@ -396,21 +441,215 @@ function openAppStore(){
 }
 
 // ================================================================
-//  INPUT
+//  INPUT — single-tap, pinch-zoom and pan
 // ================================================================
+// Architecture:
+//   - Existing tap behavior (drawBtn, arrow tap) keeps screen-logical coords.
+//   - On the Play screen the grid + arrows section is wrapped in
+//     ctx.save/translate/scale/restore so the canvas itself zooms — pixels
+//     stay crisp because we re-rasterize each frame at the new transform.
+//   - Arrow tap detection inverts the transform via _screenToWorld() so
+//     touches still hit the right arrow no matter how the player pans/zooms.
+//   - UI elements (top bar, hint/skip, gear) are drawn OUTSIDE the transform
+//     block — they don't zoom and stay readable.
 let tapX=0,tapY=0,tapped=false,mx=W/2,my=H/2;
 let lastClick=null; // {x,y,t} for button press scale feedback
+
+// Zoom state (Play screen only, reset on each generateLevel)
+let zoomLevel=1, panX=0, panY=0;
+const MIN_ZOOM=1, MAX_ZOOM=2.5;
+
+// Pinch state — set on 2-finger touchstart, cleared on touchend.
+let _pinchStartDist=0;
+let _pinchStartZoom=1;
+let _pinchStartMid=null;   // {x,y} screen-coord midpoint at gesture start
+let _pinchStartWorld=null; // {x,y} world-coord point under that midpoint
+let _pinchStartPan=null;   // {x,y} pan at gesture start
+
+// 1-finger tap tracking — single-finger drag does NOT pan. Pan is 2-finger
+// only (per user feedback: 1-finger drag was hitting arrow tap detection).
+// Tap fires on touchend, only if total movement < TAP_THRESHOLD.
+let _tapStart=null;        // {x,y,t} when 1-finger touch begins
+const TAP_THRESHOLD=10;    // px — drag beyond this cancels the tap
+
+// Pivot for zoom is the GRID's geometric center, not the screen's. The grid
+// sits above the screen midpoint (top edge ~y=127, bottom ~y=480 on level 50),
+// so a screen-center pivot threw the grid further off-screen as the user
+// zoomed in — could not pan back to see the top edge. Grid-center pivot
+// keeps the grid anchored at its own middle and lets the player pan to
+// either edge symmetrically.
+function _gridCenter(){
+  const cs=getCellSize();
+  return{
+    x:getGridX()+gridCols*cs/2,
+    y:getGridY()+gridRows*cs/2,
+  };
+}
+
+function _clampPan(){
+  // At zoom=1 there's nothing to pan — lock to default to avoid the grid
+  // sliding around aimlessly when the player two-fingers without spreading.
+  if(zoomLevel<=1.001){panX=0;panY=0;return;}
+  const cs=getCellSize();
+  const gx=getGridX(),gy=getGridY();
+  const gridW=gridCols*cs,gridH=gridRows*cs;
+  const c=_gridCenter();
+  // The user wanted to be able to drag any edge of the grid all the way to
+  // the CENTER of the viewport (not merely to the viewport edge), plus a
+  // little overshoot — so they can comfortably aim a corner arrow without
+  // the header or hint bar occluding it. Pan range = "edge at center" plus
+  // a 12% overshoot of viewport size on each side.
+  const overshootY=H*.12,overshootX=W*.12;
+  // Forward (grid-center pivot):
+  //   screenY = panY + c.y + (worldY - c.y) * zoom
+  // Pan that puts grid TOP at H/2 (+overshoot below):
+  const panY_topAtMid=H/2+overshootY-c.y-(gy-c.y)*zoomLevel;
+  // Pan that puts grid BOT at H/2 (-overshoot above):
+  const panY_botAtMid=H/2-overshootY-c.y-(gy+gridH-c.y)*zoomLevel;
+  panY=clp(panY,Math.min(panY_topAtMid,panY_botAtMid),Math.max(panY_topAtMid,panY_botAtMid));
+  const panX_leftAtMid=W/2+overshootX-c.x-(gx-c.x)*zoomLevel;
+  const panX_rightAtMid=W/2-overshootX-c.x-(gx+gridW-c.x)*zoomLevel;
+  panX=clp(panX,Math.min(panX_leftAtMid,panX_rightAtMid),Math.max(panX_leftAtMid,panX_rightAtMid));
+}
+
+// Convert a screen-space point (logical W/H coords from gp()) to world-space
+// accounting for the active pan+zoom transform around the grid. Inverse of
+// translate(c.x+panX, c.y+panY) → scale(z,z) → translate(-c.x,-c.y).
+function _screenToWorld(sx,sy){
+  if(zoomLevel===1&&panX===0&&panY===0)return{x:sx,y:sy};
+  const c=_gridCenter();
+  return{
+    x:(sx-panX-c.x)/zoomLevel+c.x,
+    y:(sy-panY-c.y)/zoomLevel+c.y,
+  };
+}
+
 function gp(e){
   const r=C.getBoundingClientRect(),t=e.touches?e.touches[0]||e.changedTouches[0]:e;
   return{x:(t.clientX-r.left)/r.width*W,y:(t.clientY-r.top)/r.height*H};
 }
+function _gpTouch(t){
+  const r=C.getBoundingClientRect();
+  return{x:(t.clientX-r.left)/r.width*W,y:(t.clientY-r.top)/r.height*H};
+}
+
+// Mouse — desktop testing only; tap fires on mouseup if movement was small.
+// No mouse drag for pan (would conflict with 1-finger tap rule). Wheel +
+// Cmd/Ctrl zooms the grid for desktop test.
 C.addEventListener('mousedown',e=>{
   initA();
-  const p=gp(e);tapX=p.x;tapY=p.y;tapped=true;lastClick={x:p.x,y:p.y,t:gt};
+  const p=gp(e);
+  _tapStart={x:p.x,y:p.y,t:gt};
+  mx=p.x;my=p.y;
+  lastClick={x:p.x,y:p.y,t:gt};
 });
-C.addEventListener('touchstart',e=>{e.preventDefault();initA();const p=gp(e);tapX=p.x;tapY=p.y;tapped=true;mx=p.x;my=p.y;lastClick={x:p.x,y:p.y,t:gt}},{passive:false});
-C.addEventListener('mousemove',e=>{const p=gp(e);mx=p.x;my=p.y});
-C.addEventListener('touchmove',e=>{e.preventDefault();const p=gp(e);mx=p.x;my=p.y},{passive:false});
+C.addEventListener('mousemove',e=>{
+  const p=gp(e);mx=p.x;my=p.y;
+});
+C.addEventListener('mouseup',e=>{
+  if(!_tapStart)return;
+  const p=gp(e);
+  const dx=p.x-_tapStart.x,dy=p.y-_tapStart.y;
+  if(Math.hypot(dx,dy)<TAP_THRESHOLD){
+    tapX=p.x;tapY=p.y;tapped=true;
+  }
+  _tapStart=null;
+});
+C.addEventListener('wheel',e=>{
+  if(!(e.ctrlKey||e.metaKey))return;
+  e.preventDefault();
+  zoomLevel=clp(zoomLevel-e.deltaY*.005,MIN_ZOOM,MAX_ZOOM);
+  _clampPan();
+},{passive:false});
+
+// Touch — strict separation:
+//   1 finger: tap on lift if movement < TAP_THRESHOLD. NO pan.
+//   2 fingers: pinch (zoom around finger midpoint) + pan (midpoint moves).
+//              Both happen simultaneously — natural Maps-app feel.
+C.addEventListener('touchstart',e=>{
+  e.preventDefault();initA();
+  if(e.touches.length===2){
+    // Pinch+pan start — record fingers' midpoint, distance, current zoom/pan,
+    // and the WORLD coord under the midpoint. While the gesture runs we
+    // pin that world point under the midpoint, so the area the user grabbed
+    // stays under their fingers as zoom/pan change (canonical pinch-zoom
+    // behavior — same as Maps, Photos).
+    const p1=_gpTouch(e.touches[0]),p2=_gpTouch(e.touches[1]);
+    _pinchStartDist=Math.hypot(p2.x-p1.x,p2.y-p1.y);
+    _pinchStartZoom=zoomLevel;
+    const midX=(p1.x+p2.x)/2,midY=(p1.y+p2.y)/2;
+    _pinchStartMid={x:midX,y:midY};
+    _pinchStartWorld=_screenToWorld(midX,midY);
+    _pinchStartPan={x:panX,y:panY};
+    _tapStart=null; // 2 fingers down → not a tap, ever
+    return;
+  }
+  // 1 finger — record tap candidate. tapped=false until lift confirms small
+  // movement (so a swipe doesn't accidentally hit an arrow under the start
+  // point).
+  const p=gp(e);
+  _tapStart={x:p.x,y:p.y,t:gt};
+  mx=p.x;my=p.y;
+  lastClick={x:p.x,y:p.y,t:gt};
+},{passive:false});
+
+C.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===2&&_pinchStartMid){
+    // Pinch+pan update
+    const p1=_gpTouch(e.touches[0]),p2=_gpTouch(e.touches[1]);
+    const d=Math.hypot(p2.x-p1.x,p2.y-p1.y);
+    const midX=(p1.x+p2.x)/2,midY=(p1.y+p2.y)/2;
+    // 1) Update zoom from finger spread
+    if(_pinchStartDist>0){
+      zoomLevel=clp(_pinchStartZoom*d/_pinchStartDist,MIN_ZOOM,MAX_ZOOM);
+    }
+    // 2) Pin the world-point that was under the initial midpoint to the
+    // current midpoint. Forward (grid-center pivot):
+    //   screenX = panX + c.x + (worldX - c.x) * zoom
+    // Solve panX so worldX=_pinchStartWorld.x lands at screen midX:
+    const c=_gridCenter();
+    panX=midX-c.x-(_pinchStartWorld.x-c.x)*zoomLevel;
+    panY=midY-c.y-(_pinchStartWorld.y-c.y)*zoomLevel;
+    _clampPan();
+    return;
+  }
+  // 1-finger move — track total movement so we can cancel the pending tap
+  // if it turns into a swipe. NO pan on 1 finger.
+  const p=gp(e);
+  if(_tapStart){
+    const dx=p.x-_tapStart.x,dy=p.y-_tapStart.y;
+    if(Math.hypot(dx,dy)>TAP_THRESHOLD)_tapStart=null;
+  }
+  mx=p.x;my=p.y;
+},{passive:false});
+
+C.addEventListener('touchend',e=>{
+  if(e.touches.length===0&&_tapStart){
+    // Only fire tap on lift if movement stayed within threshold and no pinch
+    // ever started (touchstart with 2 fingers nulls _tapStart).
+    const r=C.getBoundingClientRect();
+    const t=e.changedTouches[0];
+    const x=(t.clientX-r.left)/r.width*W,y=(t.clientY-r.top)/r.height*H;
+    const dx=x-_tapStart.x,dy=y-_tapStart.y;
+    if(Math.hypot(dx,dy)<TAP_THRESHOLD){
+      tapX=x;tapY=y;tapped=true;
+    }
+  }
+  if(e.touches.length<2){
+    // Pinch ended (could be transitioning to 1 finger or to 0).
+    // Reset pinch tracking. The remaining finger (if any) is NOT promoted
+    // to a tap or pan — user has to lift fully and tap fresh.
+    _pinchStartDist=0;_pinchStartMid=null;_pinchStartWorld=null;
+  }
+  if(e.touches.length===0)_tapStart=null;
+});
+
+C.addEventListener('touchcancel',()=>{
+  // Phone call interrupt, gesture timeout, etc — drop everything cleanly.
+  _pinchStartDist=0;_pinchStartMid=null;_pinchStartWorld=null;_tapStart=null;
+});
+
 function haptic(ms){try{navigator.vibrate(ms)}catch(e){}}
 
 // ================================================================
@@ -421,14 +660,32 @@ function haptic(ms){try{navigator.vibrate(ms)}catch(e){}}
 function _safeJSON(k){try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}}
 // Guard against Safari Private Browsing (setItem throws QuotaExceededError),
 // disk full, or any other localStorage failure. We'd rather lose a save than
-// crash the running game.
+// crash the running game. Used everywhere instead of bare localStorage.setItem.
 function _safeSet(k,v){try{localStorage.setItem(k,String(v))}catch(e){}}
 let S='menu'; // menu|play|complete|levels|settings|daily|challenge
 let level=+localStorage.getItem('ae_level')||1;
+let FORCE_FRESH_LEVELS=false; // QA flag: bypass levels-baked.js with ?fresh=1
+let ALLOW_DOT_FILL=false; // QA flag: ?dots=1 restores 1-cell filler arrows
+let CHAIN_MODE=true; // Variant D enabled by default; ?chains=0 to disable
+let CLUSTERS_MODE=true; // Variant E enabled by default; ?clusters=0 to disable
+let _clusterCenters=[]; // Set per-level by generateLevel; read by tryBuildArrow
+// QA flag: ?level=N in the URL jumps straight to that level so you can
+// preview generator changes without playing through the early levels. Also
+// unlocks all levels up to N in `maxLevel`. Doesn't persist to localStorage —
+// just affects the current session. NOT in production index.html.
+try{
+  const _u=new URL(location.href);
+  const _lv=parseInt(_u.searchParams.get('level'),10);
+  if(_lv>0&&_lv<10000){level=_lv;}
+  FORCE_FRESH_LEVELS=_u.searchParams.get('fresh')==='1';
+  ALLOW_DOT_FILL=_u.searchParams.get('dots')==='1';
+  if(_u.searchParams.has('chains'))CHAIN_MODE=_u.searchParams.get('chains')==='1';
+  if(_u.searchParams.has('clusters'))CLUSTERS_MODE=_u.searchParams.get('clusters')==='1';
+}catch(e){}
 let stars=_safeJSON('ae_stars');
 let totalStars=Object.values(stars).reduce((a,b)=>a+b,0);
 // maxLevel = highest level ever reached. Recover from stars if ae_maxlevel missing.
-let maxLevel=+localStorage.getItem('ae_maxlevel')||level;
+let maxLevel=max(+localStorage.getItem('ae_maxlevel')||0,level);
 {const starKeys=Object.keys(stars).map(Number).filter(n=>n>0);
 if(starKeys.length>0)maxLevel=max(maxLevel,max(...starKeys)+1)}
 // New players start with 150 coins — enough to BUY one hint (100) and still
@@ -870,21 +1127,62 @@ function generateLevel(lvl,customSeed){
   hintArrow=-1;hintTime=0;wrongTapsInLevel=0;
   hintUsedThisLevel=false;
   levelRevealT=0;
+  // Reset pinch/pan state — every new level starts at the default 1× zoom
+  // so the player isn't stuck inside a tight zoom from the previous level.
+  zoomLevel=1;panX=0;panY=0;_pinchStartDist=0;_panStart=null;
   updateStreak();
 
-  // Unlimited levels. Difficulty ramps from level 1 to ~250, then stays at max.
-  // Previous ramp (1→500) was too gentle — players reported level 100 felt no
-  // harder than level 30. Halving the ramp range makes each 10-level block a
-  // noticeable jump in density / arrow length.
-  // Level 1   = gentle intro (10×13, short arrows, ample space)
-  // Level 250+= extreme dense maze (24×32, max length 30)
-  const p=min(1,(lvl-1)/249);
-  const cols=floor(lrp(10,24,p)+.5);
-  const rows=floor(lrp(13,32,p)+.5);
-  const minLen=2; // always accept short arrows to fill tight spaces
-  const maxLen=floor(lrp(10,30,p)+.5); // longer max = more space filled per arrow
+  // Baked-level fast path: levels 1..200 (regular play only — daily/weekly
+  // pass customSeed and stay procedural). The pre-built layout was scored
+  // and selected for tangledness during the bake, so every player sees the
+  // same puzzle for the same level number.
+  // Braid mode forces fresh procedural — baked levels were produced without
+  // body-overlap and would not show the new mechanic.
+  if(!FORCE_FRESH_LEVELS&&customSeed==null&&lvl>=1&&lvl<=200&&typeof window!=='undefined'&&window.BAKED_LEVELS){
+    const baked=window.BAKED_LEVELS[lvl-1];
+    if(baked){
+      gridCols=baked.cols;gridRows=baked.rows;
+      arrows=baked.arrows.map(a=>({cells:a.c.map(c=>[c[0],c[1]]),dir:a.d,alive:true}));
+      minMoves=arrows.length;
+      moves=0;timer=0;undosLeft=3;
+      const key='ae_best_'+lvl;
+      bestTime=+localStorage.getItem(key)||0;
+      return;
+    }
+  }
+
+  // Difficulty curve. Power-0.8 early ramp + cap at lvl 150. The previous
+  // 26×34 grid looked sparse once 1-cell dots were removed. Competitor boards
+  // read denser on mobile: fewer cells, thicker visible strands, less blank
+  // background. Max grid is now 22×30.
+  // coexisting, not one giant Warnsdorff snake. This generator therefore
+  // rejects short "successful" paths during the main pass: if an arrow
+  // cannot grow into a proper snake, we try another head/direction instead
+  // of accepting a 2-cell scrap.
+  // Slightly steeper than before: ramp caps at lvl 120 instead of 150 so
+  // each 10-level block is felt; user feedback at lvl 67 said "more or
+  // less normal now, just a touch harder per step" so we bring the max
+  // grid (22×30) closer in by ~20%.
+  const p=min(1,Math.pow((lvl-1)/89,.72));
+  const cols=floor(lrp(10,22,p)+.5);
+  const rows=floor(lrp(13,30,p)+.5);
+  const minLen=2;
+  const maxLen=floor(lrp(18,74,p)+.5);
 
   gridCols=cols;gridRows=rows;
+
+  // Variant E — pick 3 cluster centers; scoring penalises cells far from
+  // the nearest one so arrows form separate islands. _clusterCenters is
+  // module-level so tryBuildArrow can read it (no extra parameter).
+  _clusterCenters=[];
+  if(CLUSTERS_MODE){
+    const numClusters=3;
+    for(let i=0;i<numClusters;i++){
+      const baseR=floor((i+.5)/numClusters*rows);
+      const baseC=floor((.3+.4*rng())*cols);
+      _clusterCenters.push({r:baseR,c:baseC});
+    }
+  }
 
   // occ[r][c] = arrow index that owns this cell, or -1
   const occ=[];
@@ -892,31 +1190,271 @@ function generateLevel(lvl,customSeed){
 
   const placed=[];
 
-  // Pass 1: long arrows with turns — the main visual content
+  // Pass 1: long arrows with turns — the main visual content. We require
+  // a meaningful accepted length so the level is made from a handful of
+  // visible snakes instead of dozens of tiny leftovers.
   let safety=3000;
+  const longMin=max(8,floor(maxLen*lrp(.32,.42,p)));
   while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen);
+    const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,{minAcceptLen:longMin});
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
   }
 
-  // Pass 2: short 2-3 cell fillers for medium gaps
+  // Pass 2: medium gap snakes. These fill larger holes, but still reject
+  // 1-3 cell scraps; tiny cells are handled by absorption below.
   safety=3000;
+  const medMax=max(12,floor(maxLen*.58));
+  const medMin=max(4,floor(medMax*.26));
   while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,2,3);
+    const arrow=tryBuildArrow(occ,rows,cols,rng,4,medMax,placed,{minAcceptLen:medMin,braid:false});
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
   }
 
-  // Pass 3: 1-cell arrows with valid escape lines (guaranteed solvable)
+  // Pass 3: full-coverage absorption. Goal — eliminate the "scattered
+  // single-cell dot" look the user complained about and fill empty cells
+  // in the middle of the grid.
+  //
+  // Three sub-passes, each runs in a fixpoint loop so cascading absorption
+  // fills chains of cells:
+  //   3a. TAIL extension — empty cell adjacent to an arrow's tail joins
+  //       that arrow's body (existing logic).
+  //   3b. HEAD extension along escape line — the arrow's head consumes
+  //       the cell immediately in front of it (which used to be on its
+  //       escape line). This shortens the escape but keeps it valid.
+  //   3c. 1-cell merge — leftover empty cells get a 1-cell arrow placed,
+  //       then those 1-cell arrows get merged into adjacent multi-cell
+  //       arrow tails wherever geometrically and game-logically valid.
+  //
+  // Every extension is gated by `_wouldBlockOtherEscape()` — adding a cell
+  // to arrow A's body must not put it on the escape line of any arrow B
+  // that was placed AFTER A. (B is solved before A in game order, so at
+  // B's turn A is still alive and would block B's escape.)
+
+  // Returns true iff (r,c) lies on the escape line of any arrow placed
+  // after `currentIdx`. Those arrows solve before `currentIdx` in game,
+  // so adding (r,c) to currentIdx's body would make them unreachable.
+  const _wouldBlockOtherEscape=(r,c,currentIdx)=>{
+    for(let j=currentIdx+1;j<placed.length;j++){
+      const o=placed[j];
+      const h=o.cells[o.cells.length-1];
+      if(onEscapeLine(r,c,h[0],h[1],o.dir))return true;
+    }
+    return false;
+  };
+
+  // 3a. TAIL extension into empties.
+  let absorbed=1;
+  while(absorbed>0){
+    absorbed=0;
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        if(occ[r][c]!==-1)continue;
+        for(let d=0;d<4;d++){
+          const nr=r+DY[d],nc=c+DX[d];
+          if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+          if(occ[nr][nc]===-1)continue;
+          const arrowIdx=occ[nr][nc];
+          const arrow=placed[arrowIdx];
+          const tail=arrow.cells[0];
+          if(tail[0]!==nr||tail[1]!==nc)continue;
+          const head=arrow.cells[arrow.cells.length-1];
+          if(onEscapeLine(r,c,head[0],head[1],arrow.dir))continue;
+          if(_wouldBlockOtherEscape(r,c,arrowIdx))continue;
+          arrow.cells.unshift([r,c]);
+          occ[r][c]=arrowIdx;
+          absorbed++;
+          break;
+        }
+      }
+    }
+  }
+
+  // 3b. HEAD extension along escape line. The cell directly in front of
+  // each arrow's head is empty by construction (escape line check). We
+  // pull that cell into the body, advancing the head one step toward the
+  // grid edge. New escape line is shorter by one cell but still valid.
+  let extended=1;
+  while(extended>0){
+    extended=0;
+    for(let i=0;i<placed.length;i++){
+      const a=placed[i];
+      if(a.cells.length===1)continue; // 1-cell heads are absorbed via 3c
+      const head=a.cells[a.cells.length-1];
+      const fr=head[0]+DY[a.dir],fc=head[1]+DX[a.dir];
+      if(fr<0||fr>=rows||fc<0||fc>=cols)continue; // already at edge
+      if(occ[fr][fc]!==-1)continue; // not empty (shouldn't happen)
+      if(_wouldBlockOtherEscape(fr,fc,i))continue;
+      a.cells.push([fr,fc]);
+      occ[fr][fc]=i;
+      extended++;
+    }
+  }
+
+  // 3c. Final small gap pass. We first try 3-8 cell arrows, then 2-5 cell
+  // arrows. Single-cell arrows are disabled by default — visually a rare
+  // empty cell reads better than a field of tiny arrow dots. Internal QA can
+  // pass ?dots=1 to compare the old full-coverage behaviour.
   safety=3000;
   while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,1,1);
+    const arrow=tryBuildArrow(occ,rows,cols,rng,3,8,placed,{minAcceptLen:3,braid:false});
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
+  }
+  safety=3000;
+  while(safety-->0){
+    const arrow=tryBuildArrow(occ,rows,cols,rng,2,5,placed,{minAcceptLen:2,braid:false});
+    if(!arrow)break;
+    for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
+    placed.push(arrow);
+  }
+
+  // Dense fill pass: after the main snakes are placed, keep trying modest
+  // 2-4 cell arrows until no legal gap remains. This is intentionally not
+  // "braidy"; its job is to remove empty holes without creating 1-cell dots.
+  safety=5000;
+  while(safety-->0){
+    const arrow=tryBuildArrow(occ,rows,cols,rng,2,4,placed,{minAcceptLen:2,braid:false});
+    if(!arrow)break;
+    for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
+    placed.push(arrow);
+  }
+
+  // Re-run absorption after the small gap passes. Those newly placed 2-8
+  // cell arrows create fresh tails and fresh head escape-front cells, so a
+  // second sweep can consume many cells that would otherwise become 1-cell
+  // dots.
+  absorbed=1;
+  while(absorbed>0){
+    absorbed=0;
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        if(occ[r][c]!==-1)continue;
+        for(let d=0;d<4;d++){
+          const nr=r+DY[d],nc=c+DX[d];
+          if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+          if(occ[nr][nc]===-1)continue;
+          const arrowIdx=occ[nr][nc];
+          const arrow=placed[arrowIdx];
+          const tail=arrow.cells[0];
+          if(tail[0]!==nr||tail[1]!==nc)continue;
+          const head=arrow.cells[arrow.cells.length-1];
+          if(onEscapeLine(r,c,head[0],head[1],arrow.dir))continue;
+          if(_wouldBlockOtherEscape(r,c,arrowIdx))continue;
+          arrow.cells.unshift([r,c]);
+          occ[r][c]=arrowIdx;
+          absorbed++;
+          break;
+        }
+      }
+    }
+  }
+  extended=1;
+  while(extended>0){
+    extended=0;
+    for(let i=0;i<placed.length;i++){
+      const a=placed[i];
+      if(a.cells.length===1)continue;
+      const head=a.cells[a.cells.length-1];
+      const fr=head[0]+DY[a.dir],fc=head[1]+DX[a.dir];
+      if(fr<0||fr>=rows||fc<0||fc>=cols)continue;
+      if(occ[fr][fc]!==-1)continue;
+      if(_wouldBlockOtherEscape(fr,fc,i))continue;
+      a.cells.push([fr,fc]);
+      occ[fr][fc]=i;
+      extended++;
+    }
+  }
+
+  // 3d. Internal detours. If a straight segment has two empty cells beside
+  // it, route the same arrow through those cells:
+  //   A--B becomes A--sideA--sideB--B
+  // This fills holes by making existing arrows more snake-like instead of
+  // creating separate tiny arrows.
+  let detoured=1;
+  while(detoured>0){
+    detoured=0;
+    for(let i=0;i<placed.length;i++){
+      const a=placed[i];
+      if(a.cells.length<2)continue;
+      // BUG FIX: detour cannot touch the LAST segment (k = cells.length-2).
+      // The last segment cells[N-2]→cells[N-1] must be in arrow.dir so the
+      // arrowhead glyph (which is tangent to the last segment) points the
+      // direction the arrow will actually escape. A detour at the last
+      // segment routes the path sideways and breaks that invariant — the
+      // player taps an arrow that visually points UP and it flies LEFT.
+      for(let k=0;k<a.cells.length-2;k++){
+        const p0=a.cells[k],p1=a.cells[k+1];
+        const dr=p1[0]-p0[0],dc=p1[1]-p0[1];
+        const sides=(dr!==0)?[[0,1],[0,-1]]:[[1,0],[-1,0]];
+        let did=false;
+        for(const[sr,sc] of sides){
+          const r0=p0[0]+sr,c0=p0[1]+sc;
+          const r1=p1[0]+sr,c1=p1[1]+sc;
+          if(r0<0||r0>=rows||c0<0||c0>=cols)continue;
+          if(r1<0||r1>=rows||c1<0||c1>=cols)continue;
+          if(occ[r0][c0]!==-1||occ[r1][c1]!==-1)continue;
+          const head=a.cells[a.cells.length-1];
+          if(onEscapeLine(r0,c0,head[0],head[1],a.dir))continue;
+          if(onEscapeLine(r1,c1,head[0],head[1],a.dir))continue;
+          if(_wouldBlockOtherEscape(r0,c0,i)||_wouldBlockOtherEscape(r1,c1,i))continue;
+          a.cells.splice(k+1,0,[r0,c0],[r1,c1]);
+          occ[r0][c0]=i;occ[r1][c1]=i;
+          detoured++;
+          did=true;
+          break;
+        }
+        if(did)break;
+      }
+    }
+  }
+
+  if(ALLOW_DOT_FILL){
+    safety=3000;
+    while(safety-->0){
+      const arrow=tryBuildArrow(occ,rows,cols,rng,1,1,placed);
+      if(!arrow)break;
+      for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
+      placed.push(arrow);
+    }
+  }
+  let merged=1;
+  while(merged>0){
+    merged=0;
+    for(let i=placed.length-1;i>=0;i--){
+      const a=placed[i];
+      if(a.cells.length!==1)continue;
+      const ar=a.cells[0][0],ac=a.cells[0][1];
+      for(let d=0;d<4;d++){
+        const nr=ar+DY[d],nc=ac+DX[d];
+        if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+        if(occ[nr][nc]===-1)continue;
+        const otherIdx=occ[nr][nc];
+        if(otherIdx===i)continue;
+        const other=placed[otherIdx];
+        if(other.cells.length<2)continue;
+        const tail=other.cells[0];
+        if(tail[0]!==nr||tail[1]!==nc)continue;
+        const head=other.cells[other.cells.length-1];
+        if(onEscapeLine(ar,ac,head[0],head[1],other.dir))continue;
+        if(_wouldBlockOtherEscape(ar,ac,otherIdx))continue;
+        other.cells.unshift([ar,ac]);
+        occ[ar][ac]=otherIdx;
+        placed.splice(i,1);
+        // Re-index occ — every cell whose value > i decrements by 1
+        for(let r2=0;r2<rows;r2++){
+          for(let c2=0;c2<cols;c2++){
+            if(occ[r2][c2]>i)occ[r2][c2]--;
+          }
+        }
+        merged++;
+        break;
+      }
+    }
   }
 
   // Reverse so arrows[0] = first solved
@@ -932,11 +1470,92 @@ function generateLevel(lvl,customSeed){
   bestTime=+localStorage.getItem(key)||0;
 }
 
+// Build the "primary snake" — one long winding arrow covering ~half of the
+// grid via Warnsdorff's heuristic (move to the unvisited neighbour with
+// fewest onward unvisited neighbours). The arrow head ends up on a grid
+// edge so the escape line is outside the grid (automatic clear). The body
+// trails through the interior in a snake pattern.
+function buildPrimaryArrow(occ,rows,cols,rng){
+  // Collect free edge cells; pick a random one as the HEAD (the cell the
+  // player taps; arrow flies outward from there).
+  const edges=[];
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      if(occ[r][c]!==-1)continue;
+      if(r===0||r===rows-1||c===0||c===cols-1)edges.push({r,c});
+    }
+  }
+  if(!edges.length)return null;
+  const start=edges[Math.floor(rng()*edges.length)];
+
+  // Determine head's escape direction (outward from edge). For corner
+  // cells either of two outward directions is valid — pick one.
+  // DX=[1,0,-1,0], DY=[0,-1,0,1]  (right, up, left, down)
+  let dir;
+  if(start.r===0)dir=1;       // top edge → up
+  else if(start.r===rows-1)dir=3; // bottom → down
+  else if(start.c===0)dir=2;  // left → left
+  else dir=0;                  // right → right
+
+  // Warnsdorff fill from head inward.
+  const path=[[start.r,start.c]];
+  const visited=new Set();
+  visited.add(start.r+','+start.c);
+  // Aim for ~30% of cells. Higher fractions choke the filler passes —
+  // the snake winds through every row/column, so other arrows can't
+  // place an escape line that doesn't cross it, and the level ends up
+  // as one solo snake (not playable). Floor at 8.
+  const freeCells=rows*cols;
+  const targetLen=Math.max(8,Math.floor(freeCells*.3));
+
+  let curR=start.r,curC=start.c;
+  while(path.length<targetLen){
+    const opts=[];
+    for(let d=0;d<4;d++){
+      const nr=curR+DY[d],nc=curC+DX[d];
+      if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+      if(occ[nr][nc]!==-1)continue;
+      if(visited.has(nr+','+nc))continue;
+      // Warnsdorff degree: count nr,nc's unvisited neighbours
+      let deg=0;
+      for(let dd=0;dd<4;dd++){
+        const mr=nr+DY[dd],mc=nc+DX[dd];
+        if(mr<0||mr>=rows||mc<0||mc>=cols)continue;
+        if(occ[mr][mc]!==-1)continue;
+        if(visited.has(mr+','+mc))continue;
+        deg++;
+      }
+      opts.push({r:nr,c:nc,deg});
+    }
+    if(!opts.length)break;
+    // Sort by degree ascending; tie-break with rng so different seeds
+    // produce different paths even if degrees match.
+    opts.sort((a,b)=>(a.deg-b.deg)||(rng()-.5));
+    const pick=opts[0];
+    path.push([pick.r,pick.c]);
+    visited.add(pick.r+','+pick.c);
+    curR=pick.r;curC=pick.c;
+  }
+
+  if(path.length<8)return null;
+
+  // arrow.cells convention: cells[0]=tail, cells[N-1]=head. We grew from
+  // head outward, so reverse.
+  const cells=path.reverse();
+  return {cells,dir};
+}
+
 // Build one arrow by EXHAUSTIVE candidate search.
 // Special case: when minLen==1 && maxLen==1, build a single-cell arrow (just a
 // head with a direction). Used in the gap-fill pass to plug isolated empties.
-function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen){
+// `placed` (optional) is the array of arrows already placed — used for
+// direction-variance penalty (#6: discourage clusters of same-direction
+// arrows so the puzzle isn't solvable by "tap everything pointing east").
+function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
+  opts=opts||{};
   const oneCell=(minLen===1&&maxLen===1);
+  const minAcceptLen=opts.minAcceptLen||minLen;
+  const braidMode=opts.braid!==false;
   const candidates=[];
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
@@ -951,25 +1570,54 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen){
         }
         // Escape line from head to grid edge must be clear of existing arrows
         let clear=true;
+        let escLen=0;
         let cr=r+DY[d],cc=c+DX[d];
         while(cr>=0&&cr<rows&&cc>=0&&cc<cols){
           if(occ[cr][cc]!==-1){clear=false;break}
+          escLen++;
           cr+=DY[d];cc+=DX[d];
         }
         if(!clear)continue;
         // Score:
-        //   +1.5 per neighbor already occupied → tight packing (cluster grows)
+        //   +4.0 per neighbor already occupied → new arrows start attached to
+        //        existing strands instead of spawning as separate islands.
+        //   +2.0 per unique adjacent arrow → heads prefer busy knots, not just
+        //        one flat parallel side.
+        //   -2.0 if neighbor arrow has the SAME escape direction (#6 direction
+        //        variance — prevents "all arrows point east" clusters that the
+        //        player can solve by tap-spamming in one axis)
         //   -0.12 × Chebyshev distance from center → seed the first arrow near
-        //   the middle of the grid so the cluster has room to expand outward
-        //   in all directions (prevents hollow-center effect).
+        //        the middle of the grid so the cluster has room to expand
+        //        outward in all directions (prevents hollow-center effect)
         let s=rng();
+        const adjArrows=new Set();
         for(let dd=0;dd<4;dd++){
           const nr=r+DY[dd],nc=c+DX[dd];
-          if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1)s+=1.5;
+          if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1){
+            s+=braidMode?4.0:1.5;
+            adjArrows.add(occ[nr][nc]);
+            if(placed&&placed[occ[nr][nc]]&&placed[occ[nr][nc]].dir===d)s-=2.0;
+          }
         }
+        if(braidMode)s+=adjArrows.size*2.0;
         const cR=(rows-1)/2,cC=(cols-1)/2;
         const distCenter=max(abs(r-cR),abs(c-cC));
         s-=distCenter*.12;
+        // Variant D — chain mode bonus: prefer heads with LONG escape lines.
+        // Each cell on the line is potential blocker once a later arrow's
+        // body lands there, which creates a dependency chain at game time.
+        if(CHAIN_MODE)s+=escLen*.5;
+        // Variant E — clusters mode penalty: arrow heads far from any
+        // cluster center get strongly docked, so heads gather around the
+        // chosen island centers and leave empty corridors between them.
+        if(CLUSTERS_MODE&&_clusterCenters.length){
+          let minD=Infinity;
+          for(const cc of _clusterCenters){
+            const dd=max(abs(r-cc.r),abs(c-cc.c));
+            if(dd<minD)minD=dd;
+          }
+          s-=minD*.5;
+        }
         candidates.push({hr:r,hc:c,dir:d,s});
       }
     }
@@ -998,6 +1646,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen){
     let br=br0,bc=bc0;
     let lastStepDir=bd;
     let straightRun=1;
+    let turnCount=0; // #4: count direction changes during growth
 
     while(cells.length<targetLen){
       const opts=[];
@@ -1010,23 +1659,72 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen){
         opts.push({r:nr,c:nc,d});
       }
       if(opts.length===0)break;
-      const scored=opts.map(({r,c,d})=>{
+      // Hard cap: never extend a straight run past 2 cells. Without this,
+      // arrows can grow long straight along the grid edge (no neighbors → no
+      // proximity penalty) and the player solves the level by tapping the
+      // outer ring in order. We physically refuse the option here.
+      const filteredOpts=opts.filter(o=>!(o.d===lastStepDir&&straightRun>=2));
+      const useOpts=filteredOpts.length?filteredOpts:opts; // fallback only if turn impossible
+      const scored=useOpts.map(({r,c,d})=>{
         let s=rng();
-        // Proximity bonus: +2.0 per occupied neighbor → paths hug existing arrows
+        // Proximity bonus: high enough that later arrows weave through existing
+        // strands instead of taking isolated open-space walks.
         let occupied=[false,false,false,false];
+        const adjArrows=new Set();
         for(let dd=0;dd<4;dd++){
           const nr=r+DY[dd],nc=c+DX[dd];
           if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1){
-            s+=2.0;
+            s+=braidMode?3.6:2.0;
             occupied[dd]=true;
+            adjArrows.add(occ[nr][nc]);
           }
         }
-        // Sandwich bonus: occupied on OPPOSITE sides → path threads a corridor
-        if(occupied[0]&&occupied[2])s+=2.5; // right + left
-        if(occupied[1]&&occupied[3])s+=2.5; // up + down
-        // Turn bonus: prefer changing direction after 1-2 straight steps
-        if(d!==lastStepDir)s+=1.6;
-        else if(straightRun>=2)s-=1.2;
+        if(braidMode)s+=adjArrows.size*1.8;
+        // Sandwich bonus: occupied on OPPOSITE sides → path threads a corridor.
+        // This is the "braid" signal: prefer cells that sit between strands.
+        if(occupied[0]&&occupied[2])s+=braidMode?7.0:2.5;
+        if(occupied[1]&&occupied[3])s+=braidMode?7.0:2.5;
+        // Lane bonus: when moving horizontally, prefer having strands above or
+        // below; when moving vertically, prefer strands left/right. It creates
+        // long adjacent runs that read like woven ropes.
+        if(braidMode&&(d===0||d===2)&&(occupied[1]||occupied[3]))s+=3.8;
+        if(braidMode&&(d===1||d===3)&&(occupied[0]||occupied[2]))s+=3.8;
+        // After a seed arrow exists, isolated cells are visually weak. Keep a
+        // small escape hatch early in growth so the arrow can still leave a
+        // pocket and become long, but otherwise pull it back into the knot.
+        if(braidMode&&placed&&placed.length>0&&adjArrows.size===0&&cells.length>4)s-=3.0;
+        // Turn bonus: dominant signal — every arrow should be twisty.
+        // Was +1.6 (weaker than the +2.0 proximity bonus), so on the grid
+        // edge with few neighbors arrows still grew straight. Bumped to
+        // +3.0 so even an isolated arrow strongly prefers turning.
+        if(d!==lastStepDir)s+=3.0;
+        // Straight penalty: was -1.2, weak vs RNG noise. Now -3.5 — combined
+        // with the hard cap above, straight runs of 3+ are statistically
+        // rare and never hit the wall-hugging "tap outer ring" exploit.
+        else if(straightRun>=2)s-=3.5;
+        // Variant D — chain mode: STRONG bonus if this cell is on the escape
+        // line of an already-placed arrow. That arrow solves AFTER this one
+        // in game order; placing our body on its escape line means the player
+        // can only solve it once we're removed → adds one link to the chain.
+        if(CHAIN_MODE&&placed){
+          let crossings=0;
+          for(let j=0;j<placed.length;j++){
+            const o=placed[j];
+            const oh=o.cells[o.cells.length-1];
+            if(onEscapeLine(r,c,oh[0],oh[1],o.dir))crossings++;
+          }
+          s+=crossings*2.5;
+        }
+        // Variant E — clusters mode: penalty for body cells far from nearest
+        // cluster center, keeping the arrow inside its assigned island.
+        if(CLUSTERS_MODE&&_clusterCenters.length){
+          let minD=Infinity;
+          for(const cc of _clusterCenters){
+            const dd=max(abs(r-cc.r),abs(c-cc.c));
+            if(dd<minD)minD=dd;
+          }
+          s-=minD*.4;
+        }
         return{cell:[r,c],d,s};
       });
       scored.sort((a,b)=>b.s-a.s);
@@ -1034,10 +1732,15 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen){
       cells.unshift(pick.cell);
       used.add(pick.cell[0]+','+pick.cell[1]);
       br=pick.cell[0];bc=pick.cell[1];
-      if(pick.d===lastStepDir)straightRun++;else{straightRun=1;lastStepDir=pick.d}
+      if(pick.d===lastStepDir)straightRun++;else{straightRun=1;lastStepDir=pick.d;turnCount++}
     }
 
-    if(cells.length>=minLen)return{cells,dir};
+    // #4 Min turn requirement: long arrows (>5 cells) must twist at least
+    // twice. A 6-cell L-shape (1 turn) was visually flat and let the player
+    // solve it by sliding their finger. Reject and try the next candidate.
+    if(cells.length>5&&turnCount<2)continue;
+
+    if(cells.length>=minAcceptLen)return{cells,dir};
   }
   return null;
 }
@@ -1125,7 +1828,7 @@ function tapArrowByIndex(idx){
       arrow:a,
       dir:a.dir,
       t:0,dur:1.2,
-      col:TH.arrow,cs,gx,gy,
+      col:arrowColor(a,idx),cs,gx,gy,
       bodyLen,totalDist:bodyLen+extLen,
       path,
     });
@@ -1304,8 +2007,13 @@ function getPathSegment(path,sFrom,sTo){
 function drawArrowPolyline(pts,sz,col,alpha){
   if(pts.length<2)return;
   // Thin lines scaled to cell size. Min 2px keeps lines visible at tiny cells.
-  const thick=max(1.5,sz*.10);
-  const headL=sz*.32,headW=sz*.22;
+  // Stroke / arrowhead sizing. Bumped from .10/.32/.22 to .14/.34/.26 so
+  // the lines read as fat "ropes" the way competitor games (Arrow Jam Go,
+  // Arrows Escape Puzzle) draw them — the previous thin stroke looked
+  // sketchy next to a dense-fill grid. Min stroke 2px so very small cells
+  // on max-density boards don't disappear into hairlines.
+  const thick=max(2,sz*.14);
+  const headL=sz*.34,headW=sz*.26;
 
   X.save();
   X.globalAlpha=alpha==null?1:alpha;
@@ -1457,7 +2165,6 @@ function _renderGlass(w,h,r,dark){
   x.restore();
   return cv;
 }
-
 // True when a modal/overlay is on top — buttons under must NOT consume the
 // tap (the overlay needs it). Also disables their hover state for clarity.
 function _inputBlocked(){return langPickerOpen}
@@ -1636,9 +2343,10 @@ function drawMenu(){
   if(availableUpdate){
     const bY=H*.91,bW=240,bH=28;
     const hv=abs(mx-W/2)<bW/2&&abs(my-bY)<bH/2;
-    X.fillStyle=hv?TH.accent+'40':TH.accent+'25';
+    // Design system tokens (matches drawBigBtn): fill 18/30, stroke 50, lw 1.5
+    X.fillStyle=hv?TH.accent+'30':TH.accent+'18';
     X.beginPath();X.roundRect(W/2-bW/2,bY-bH/2,bW,bH,bH/2);X.fill();
-    X.strokeStyle=TH.accent+'80';X.lineWidth=1;
+    X.strokeStyle=TH.accent+'50';X.lineWidth=1.5;
     X.beginPath();X.roundRect(W/2-bW/2,bY-bH/2,bW,bH,bH/2);X.stroke();
     txt(t('updateAvailable')+' v'+availableUpdate,W/2,bY,11,TH.accent);
     if(tapped&&abs(tapX-W/2)<bW/2&&abs(tapY-bY)<bH/2){
@@ -1692,6 +2400,31 @@ function drawPlay(){
   // Advance level reveal animation (staggered fade-in of all arrows)
   if(levelRevealT<1)levelRevealT=min(1,levelRevealT+dt/.9);
 
+  // === ZOOM/PAN BLOCK START ===
+  // Wrap grid + arrows + tap detection + flying animations in a save/restore
+  // pair so the player's pinch-zoom and pan affect everything that "belongs
+  // to the puzzle" but leaves the UI bar (top hearts, hint/skip) untouched.
+  // Pivot at grid center so a zoom doesn't throw the grid off-screen; pan
+  // freely from there. _screenToWorld() / _clampPan() use the same pivot.
+  const _zoomC=_gridCenter();
+  X.save();
+  X.translate(_zoomC.x+panX,_zoomC.y+panY);
+  X.scale(zoomLevel,zoomLevel);
+  X.translate(-_zoomC.x,-_zoomC.y);
+
+  // Dot grid background — small dots at the center of every grid cell. Stays
+  // visible after arrows clear (graph-paper aesthetic per audit + competitor
+  // reference). Drawn before arrows so live cells overlap the dot but cleared
+  // cells expose it.
+  X.fillStyle=darkMode?'rgba(255,255,255,.10)':'rgba(0,0,0,.10)';
+  const _dotR=max(1,cs*.06);
+  for(let r=0;r<gridRows;r++){
+    for(let c=0;c<gridCols;c++){
+      const cx=gx+c*cs+cs/2,cy=gy+r*cs+cs/2;
+      X.beginPath();X.arc(cx,cy,_dotR,0,TAU);X.fill();
+    }
+  }
+
   // Draw all alive arrows as continuous paths through their cells
   for(let i=0;i<arrows.length;i++){
     const a=arrows[i];
@@ -1716,18 +2449,23 @@ function drawPlay(){
       }
     }
 
-    // Hint highlight: cheap pulse via globalAlpha + slightly larger stroke
-    // overlay instead of shadowBlur (which was a major perf hit on iOS WebKit
-    // — every alive arrow burned GPU bandwidth even when only one was hinted).
-    if(i===hintArrow&&hintTime>0&&!reducedMotion){
-      const pulse=.5+.5*sin(gt*6);
+    // Hint highlight: slow gentle pulse with soft glow halo. Only ONE arrow
+    // is ever hinted at a time, so shadowBlur is affordable here even though
+    // it's banned for the per-frame draw of every alive arrow.
+    const isHinted=i===hintArrow&&hintTime>0;
+    if(isHinted&&!reducedMotion){
+      // Slow pulse (~2.5s cycle) — subtle, not flashy.
+      const pulse=.5+.5*sin(gt*2.5);
       X.save();
-      X.globalAlpha=(.4+pulse*.5)*revealA;
+      // Soft glow halo
+      X.shadowColor=TH.star;
+      X.shadowBlur=6+pulse*8; // 6..14 px
+      X.globalAlpha=(.5+pulse*.35)*revealA; // 0.5..0.85
       drawArrowStatic(a,cs,gx,gy,TH.star,1,shakeOff);
       X.restore();
     }
 
-    const col=isShaking?TH.arrowBlock:(i===hintArrow&&hintTime>0?TH.star:TH.arrow);
+    const col=isShaking?TH.arrowBlock:(isHinted?TH.star:arrowColor(a,i));
     drawArrowStatic(a,cs,gx,gy,col,revealA,shakeOff);
   }
 
@@ -1787,15 +2525,19 @@ function drawPlay(){
   }
 
   // Tap detection — find the alive arrow whose nearest cell center is closest
-  // to the tap point (within a generous radius).
+  // to the tap point (within a generous radius). Tap arrives in screen coords
+  // but arrow cells are stored in world coords, so we invert the active
+  // zoom/pan transform first via _screenToWorld(). When zoom=1 this is a
+  // no-op so non-zoomed gameplay is unaffected.
   if(tapped){
+    const w=_screenToWorld(tapX,tapY);
     let bestIdx=-1,bestDist=cs*.85;
     for(let i=0;i<arrows.length;i++){
       const a=arrows[i];
       if(!a.alive)continue;
       for(const[r,c] of a.cells){
         const ax=gx+c*cs+cs/2,ay=gy+r*cs+cs/2;
-        const d=sqrt((tapX-ax)*(tapX-ax)+(tapY-ay)*(tapY-ay));
+        const d=sqrt((w.x-ax)*(w.x-ax)+(w.y-ay)*(w.y-ay));
         if(d<bestDist){bestDist=d;bestIdx=i;}
       }
     }
@@ -1828,6 +2570,8 @@ function drawPlay(){
     if(shakeAnims[i].t>=shakeAnims[i].dur)shakeAnims.splice(i,1);
   }
 
+  X.restore(); // === ZOOM/PAN BLOCK END === — UI below stays in screen coords
+
   // Bottom bar: stats row + action buttons row
   const sy1=H*.87;
   txt('Moves: '+moves+'/'+minMoves,W*.22,sy1,11,moves>minMoves?TH.warning:TH.textSec);
@@ -1842,9 +2586,10 @@ function drawPlay(){
   const by=H*.93,bw=130,bh=34;
   const _drawActionBtn=(bx,label,cost,enabled,color)=>{
     const hv=abs(mx-bx)<bw/2&&abs(my-by)<bh/2;
-    X.fillStyle=enabled?(hv?color+'35':color+'20'):TH.btnBg;
+    // Design system: matches drawBigBtn tokens (fill 18/30, stroke 50, lw 1.5)
+    X.fillStyle=enabled?(hv?color+'30':color+'18'):TH.btnBg;
     X.beginPath();X.roundRect(bx-bw/2,by-bh/2,bw,bh,bh/2);X.fill();
-    X.strokeStyle=enabled?color+'60':TH.border;X.lineWidth=1;
+    X.strokeStyle=enabled?color+'50':TH.border;X.lineWidth=1.5;
     X.beginPath();X.roundRect(bx-bw/2,by-bh/2,bw,bh,bh/2);X.stroke();
     // Label aligned LEFT inside the button (so coin/cost gets clean space on the right)
     const labelColor=enabled?TH.text:TH.textDim;
@@ -2216,27 +2961,35 @@ function drawGameOver(){
   const canContinue=coins>=CONTINUE_COST;
   const cby=H*.58,cbw=220,cbh=42;
   const cbhv=abs(mx-W/2)<cbw/2&&abs(my-cby)<cbh/2;
-  X.fillStyle=canContinue?(cbhv?TH.star+'35':TH.star+'20'):TH.btnBg;
+  // Design system tokens (matches drawBigBtn): fill 18/30, stroke 50, lw 1.5
+  X.fillStyle=canContinue?(cbhv?TH.star+'30':TH.star+'18'):TH.btnBg;
   X.beginPath();X.roundRect(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);X.fill();
-  X.strokeStyle=canContinue?TH.star+'70':TH.border;X.lineWidth=1.5;
+  X.strokeStyle=canContinue?TH.star+'50':TH.border;X.lineWidth=1.5;
   X.beginPath();X.roundRect(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);X.stroke();
-  txt(t('continueBtn'),W/2-28,cby,14,canContinue?TH.text:TH.textDim);
-  drawCoin(W/2+22,cby,7);
-  txt(CONTINUE_COST+'',W/2+33,cby,12,canContinue?TH.star:TH.textDim,'left');
+  // Layout: label slightly LEFT of center, price block slightly RIGHT.
+  // Was W/2-28 / +22 / +33 — Russian "ПРОДОЛЬЖИТЬ" with its tall ь visually
+  // collided with the coin icon. Shift the price block ~14px right to
+  // give the label breathing room (audit fix).
+  txt(t('continueBtn'),W/2-34,cby,14,canContinue?TH.text:TH.textDim);
+  drawCoin(W/2+36,cby,7);
+  txt(CONTINUE_COST+'',W/2+47,cby,12,canContinue?TH.star:TH.textDim,'left');
   if(tapped&&abs(tapX-W/2)<cbw/2&&abs(tapY-cby)<cbh/2){
     if(canContinue)continueFromGameover();
     tapped=false;
   }
 
-  // Continue by watching ad (FREE alternative)
+  // Continue by watching ad (FREE alternative). Label uses existing
+  // continueBtn translation + a play-icon cue so it stays short on every
+  // language and reads as "continue via video" rather than reading
+  // hardcoded English on a Russian device (audit fix).
   const aby=H*.66;
-  if(drawBtn('CONTINUE (Watch Ad)',W/2,aby,220,42,TH.success)){
+  if(drawBtn(t('continueBtn')+' ▶',W/2,aby,220,42,TH.success)){
     showRewardedAd(()=>{undosLeft=3;S='play'});
   }
 
-  // Watch ad for coins (when low on coins)
+  // Watch ad for coins (when low on coins). Localized via t('watchAd').
   if(coins<CONTINUE_COST){
-    if(drawBtn('GET '+AD_COIN_REWARD+' COINS (Ad)',W/2,H*.73,220,38,TH.star)){
+    if(drawBtn('+'+AD_COIN_REWARD+' '+t('coins').toUpperCase()+' ▶',W/2,H*.73,220,38,TH.star)){
       showRewardedAd(()=>{coins+=AD_COIN_REWARD;totalCoinsEarned+=AD_COIN_REWARD;save();spawnFloater(W/2,H*.73,'+'+AD_COIN_REWARD)});
     }
   }
@@ -2282,7 +3035,8 @@ function drawSettings(){
     if(drawBtn(t('resetProgress'),W/2,425,200,44,TH.warning)){resetConfirm=true}
   }else{
     txt(t('areYouSure'),W/2,415,13,TH.warning);
-    if(drawBtn(t('yesReset'),W/2-60,455,110,40,TH.arrowBlock)){
+    // Wider than CANCEL because translations like "ДА, СБРОСИТЬ" / "SÍ, REINICIAR" / "EVET, SIFIRLA" overflow 110px.
+    if(drawBtn(t('yesReset'),W/2-72,455,134,40,TH.arrowBlock)){
       // Reset wipes PROGRESS keys only — language, sound, theme preferences
       // and system keys (lasterror, lastreject) are preserved.
       // KEY NAMES MUST MATCH save() in line ~386 — previous list used wrong
@@ -2306,7 +3060,7 @@ function drawSettings(){
       resetConfirm=false;save();
       goto('menu');
     }
-    if(drawBtn(t('cancel'),W/2+60,455,110,40)){resetConfirm=false}
+    if(drawBtn(t('cancel'),W/2+72,455,110,40)){resetConfirm=false}
   }
 
   if(drawBtn('← '+t('back'),W/2,H-60,140,38)){resetConfirm=false;goto('menu')}
@@ -2523,6 +3277,65 @@ requestAnimationFrame(loop);
 if('serviceWorker' in navigator && typeof Capacitor==='undefined'){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
+window._ae={
+  generateLevel,
+  get arrows(){return arrows},
+  get gridCols(){return gridCols},
+  get gridRows(){return gridRows},
+  stats(lv){
+    if(lv)generateLevel(lv);
+    const lens=arrows.map(a=>a.cells.length).sort((a,b)=>b-a);
+    const cells=lens.reduce((a,b)=>a+b,0);
+    const owner={};
+    arrows.forEach((a,i)=>a.cells.forEach(([r,c])=>{owner[r+','+c]=i}));
+    let contacts=0;
+    arrows.forEach((a,i)=>a.cells.forEach(([r,c])=>{
+      for(let d=0;d<4;d++){
+        const j=owner[(r+DY[d])+','+(c+DX[d])];
+        if(j!=null&&j!==i)contacts++;
+      }
+    }));
+    const sim=arrows.map(a=>({cells:a.cells.map(c=>[c[0],c[1]]),dir:a.dir,alive:true}));
+    let solved=0;
+    while(solved<sim.length){
+      let idx=-1;
+      for(let i=0;i<sim.length;i++){
+        const a=sim[i];
+        if(!a.alive)continue;
+        const head=a.cells[a.cells.length-1];
+        let cr=head[0]+DY[a.dir],cc=head[1]+DX[a.dir],blocked=false;
+        while(cr>=0&&cr<gridRows&&cc>=0&&cc<gridCols&&!blocked){
+          for(let j=0;j<sim.length&&!blocked;j++){
+            if(j===i||!sim[j].alive)continue;
+            for(const[or,oc] of sim[j].cells){
+              if(or===cr&&oc===cc){blocked=true;break}
+            }
+          }
+          cr+=DY[a.dir];cc+=DX[a.dir];
+        }
+        if(!blocked){idx=i;break}
+      }
+      if(idx<0)break;
+      sim[idx].alive=false;
+      solved++;
+    }
+    return{
+      level:lv||level,
+      grid:gridCols+'x'+gridRows,
+      arrows:lens.length,
+      coverage:+(cells/(gridCols*gridRows)*100).toFixed(1),
+      one:lens.filter(x=>x===1).length,
+      two:lens.filter(x=>x===2).length,
+      lt4:lens.filter(x=>x<4).length,
+      avg:+(cells/lens.length).toFixed(1),
+      max:lens[0]||0,
+      braid:+(contacts/max(1,cells)).toFixed(2),
+      top:lens.slice(0,10),
+      solvable:solved===sim.length,
+      solved
+    };
+  }
+};
 })(); // end IIFE
 </script>
 </body>

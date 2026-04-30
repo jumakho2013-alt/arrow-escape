@@ -2,8 +2,8 @@
 // Bump on each release so old caches are invalidated and the new HTML/JS
 // actually takes effect. If you forget, users see a stale build until they
 // manually clear data.
-const CACHE_NAME = 'stray-arrows-v1.0.13';
-const ASSETS = ['/', '/index.html'];
+const CACHE_NAME = 'stray-arrows-v1.0.14';
+const ASSETS = ['/', '/index.html', '/levels-baked.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));
