@@ -435,22 +435,49 @@ let _pinchStartPan=null;   // {x,y} pan at gesture start
 let _tapStart=null;        // {x,y,t} when 1-finger touch begins
 const TAP_THRESHOLD=10;    // px — drag beyond this cancels the tap
 
+// Pivot for zoom is the GRID's geometric center, not the screen's. The grid
+// sits above the screen midpoint (top edge ~y=127, bottom ~y=480 on level 50),
+// so a screen-center pivot threw the grid further off-screen as the user
+// zoomed in — could not pan back to see the top edge. Grid-center pivot
+// keeps the grid anchored at its own middle and lets the player pan to
+// either edge symmetrically.
+function _gridCenter(){
+  const cs=getCellSize();
+  return{
+    x:getGridX()+gridCols*cs/2,
+    y:getGridY()+gridRows*cs/2,
+  };
+}
+
 function _clampPan(){
-  // Keep grid centered-ish: pan range scales with zoom so the player can
-  // reach the corners but can't fling the grid off-screen.
-  const maxPan=W*(zoomLevel-1)*.5;
-  panX=clp(panX,-maxPan,maxPan);
-  panY=clp(panY,-maxPan,maxPan);
+  const cs=getCellSize();
+  const gx=getGridX(),gy=getGridY();
+  const gridW=gridCols*cs,gridH=gridRows*cs;
+  const c=_gridCenter();
+  // Forward (grid-center pivot):
+  //   screenY = (worldY - c.y)*zoom + c.y + panY
+  // Solve for panY at viewport edges:
+  //   grid TOP at screen 0:    panY = -c.y - (gy - c.y) * zoom
+  //   grid BOT at screen H:    panY =  H - c.y - (gy+gridH - c.y) * zoom
+  const panY_topAt0=-c.y-(gy-c.y)*zoomLevel;
+  const panY_botAtH=H-c.y-(gy+gridH-c.y)*zoomLevel;
+  panY=clp(panY,Math.min(panY_topAt0,panY_botAtH),Math.max(panY_topAt0,panY_botAtH));
+  // Same for X — let either left or right edge reach the corresponding
+  // viewport edge.
+  const panX_leftAt0=-c.x-(gx-c.x)*zoomLevel;
+  const panX_rightAtW=W-c.x-(gx+gridW-c.x)*zoomLevel;
+  panX=clp(panX,Math.min(panX_leftAt0,panX_rightAtW),Math.max(panX_leftAt0,panX_rightAtW));
 }
 
 // Convert a screen-space point (logical W/H coords from gp()) to world-space
 // accounting for the active pan+zoom transform around the grid. Inverse of
-// translate(W/2+panX, H/2+panY) → scale(z,z) → translate(-W/2,-H/2).
+// translate(c.x+panX, c.y+panY) → scale(z,z) → translate(-c.x,-c.y).
 function _screenToWorld(sx,sy){
   if(zoomLevel===1&&panX===0&&panY===0)return{x:sx,y:sy};
+  const c=_gridCenter();
   return{
-    x:(sx-panX-W/2)/zoomLevel+W/2,
-    y:(sy-panY-H/2)/zoomLevel+H/2,
+    x:(sx-panX-c.x)/zoomLevel+c.x,
+    y:(sy-panY-c.y)/zoomLevel+c.y,
   };
 }
 
@@ -534,12 +561,13 @@ C.addEventListener('touchmove',e=>{
     if(_pinchStartDist>0){
       zoomLevel=clp(_pinchStartZoom*d/_pinchStartDist,MIN_ZOOM,MAX_ZOOM);
     }
-    // 2) Compute pan so the original world-point still sits under the
-    // current finger midpoint. Forward transform:
-    //   screenX = panX + W/2 + (worldX - W/2) * zoom
-    // Solve for panX with current midX as the screen target:
-    panX=midX-W/2-(_pinchStartWorld.x-W/2)*zoomLevel;
-    panY=midY-H/2-(_pinchStartWorld.y-H/2)*zoomLevel;
+    // 2) Pin the world-point that was under the initial midpoint to the
+    // current midpoint. Forward (grid-center pivot):
+    //   screenX = panX + c.x + (worldX - c.x) * zoom
+    // Solve panX so worldX=_pinchStartWorld.x lands at screen midX:
+    const c=_gridCenter();
+    panX=midX-c.x-(_pinchStartWorld.x-c.x)*zoomLevel;
+    panY=midY-c.y-(_pinchStartWorld.y-c.y)*zoomLevel;
     _clampPan();
     return;
   }
@@ -1885,12 +1913,13 @@ function drawPlay(){
   // Wrap grid + arrows + tap detection + flying animations in a save/restore
   // pair so the player's pinch-zoom and pan affect everything that "belongs
   // to the puzzle" but leaves the UI bar (top hearts, hint/skip) untouched.
-  // Math: translate to grid center, scale, translate back — pivot is screen
-  // center. _screenToWorld() inverts this for tap coordinates.
+  // Pivot at grid center so a zoom doesn't throw the grid off-screen; pan
+  // freely from there. _screenToWorld() / _clampPan() use the same pivot.
+  const _zoomC=_gridCenter();
   X.save();
-  X.translate(W/2+panX,H/2+panY);
+  X.translate(_zoomC.x+panX,_zoomC.y+panY);
   X.scale(zoomLevel,zoomLevel);
-  X.translate(-W/2,-H/2);
+  X.translate(-_zoomC.x,-_zoomC.y);
 
   // Dot grid background — small dots at the center of every grid cell. Stays
   // visible after arrows clear (graph-paper aesthetic per audit + competitor
