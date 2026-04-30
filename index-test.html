@@ -1078,17 +1078,24 @@ function generateLevel(lvl,customSeed){
   zoomLevel=1;panX=0;panY=0;_pinchStartDist=0;_panStart=null;
   updateStreak();
 
-  // Unlimited levels. Difficulty ramps from level 1 to ~250, then stays at max.
-  // Previous ramp (1→500) was too gentle — players reported level 100 felt no
-  // harder than level 30. Halving the ramp range makes each 10-level block a
-  // noticeable jump in density / arrow length.
-  // Level 1   = gentle intro (10×13, short arrows, ample space)
-  // Level 250+= extreme dense maze (24×32, max length 30)
-  const p=min(1,(lvl-1)/249);
-  const cols=floor(lrp(10,24,p)+.5);
-  const rows=floor(lrp(13,32,p)+.5);
+  // Difficulty curve. Two changes addressing audit feedback "still too easy
+  // at lvl 100, 200, 300":
+  //   1. Steeper early ramp (power 0.8) front-loads density growth so by
+  //      level 50 the player already feels meaningful pressure, not a
+  //      practically-tutorial-grade puzzle.
+  //   2. Cap moved from lvl 250 to lvl 150 — fully maxed difficulty by
+  //      lvl 150 instead of dragging the ramp out indefinitely.
+  //   3. Max grid raised 24×32 → 26×34, max arrow length 30 → 33 — the
+  //      old plateau wasn't dense enough to feel "extreme" past lvl 250.
+  // Level 1    = gentle intro (10×13, short arrows, ample space)
+  // Level 50   = ~17×22 grid, length ~21 (was 12×17 / length 14)
+  // Level 100  = ~22×30 grid, length ~28 (was 16×21 / length 18)
+  // Level 150+ = max (26×34, length 33)
+  const p=min(1,Math.pow((lvl-1)/149,.8));
+  const cols=floor(lrp(10,26,p)+.5);
+  const rows=floor(lrp(13,34,p)+.5);
   const minLen=2; // always accept short arrows to fill tight spaces
-  const maxLen=floor(lrp(10,30,p)+.5); // longer max = more space filled per arrow
+  const maxLen=floor(lrp(10,33,p)+.5); // longer max = more space filled per arrow
 
   gridCols=cols;gridRows=rows;
 
@@ -2476,23 +2483,30 @@ function drawGameOver(){
   glass(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);
   X.strokeStyle=canContinue?TH.star+'70':TH.border;X.lineWidth=1.5;
   X.beginPath();X.roundRect(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);X.stroke();
-  txt(t('continueBtn'),W/2-28,cby,14,canContinue?TH.text:TH.textDim);
-  drawCoin(W/2+22,cby,7);
-  txt(CONTINUE_COST+'',W/2+33,cby,12,canContinue?TH.star:TH.textDim,'left');
+  // Layout: label slightly LEFT of center, price block slightly RIGHT.
+  // Was W/2-28 / +22 / +33 — Russian "ПРОДОЛЬЖИТЬ" with its tall ь visually
+  // collided with the coin icon. Shift the price block ~14px right to
+  // give the label breathing room (audit fix).
+  txt(t('continueBtn'),W/2-34,cby,14,canContinue?TH.text:TH.textDim);
+  drawCoin(W/2+36,cby,7);
+  txt(CONTINUE_COST+'',W/2+47,cby,12,canContinue?TH.star:TH.textDim,'left');
   if(tapped&&abs(tapX-W/2)<cbw/2&&abs(tapY-cby)<cbh/2){
     if(canContinue)continueFromGameover();
     tapped=false;
   }
 
-  // Continue by watching ad (FREE alternative)
+  // Continue by watching ad (FREE alternative). Label uses existing
+  // continueBtn translation + a play-icon cue so it stays short on every
+  // language and reads as "continue via video" rather than reading
+  // hardcoded English on a Russian device (audit fix).
   const aby=H*.66;
-  if(drawBtn('CONTINUE (Watch Ad)',W/2,aby,220,42,TH.success)){
+  if(drawBtn(t('continueBtn')+' ▶',W/2,aby,220,42,TH.success)){
     showRewardedAd(()=>{undosLeft=3;S='play'});
   }
 
-  // Watch ad for coins (when low on coins)
+  // Watch ad for coins (when low on coins). Localized via t('watchAd').
   if(coins<CONTINUE_COST){
-    if(drawBtn('GET '+AD_COIN_REWARD+' COINS (Ad)',W/2,H*.73,220,38,TH.star)){
+    if(drawBtn('+'+AD_COIN_REWARD+' '+t('coins').toUpperCase()+' ▶',W/2,H*.73,220,38,TH.star)){
       showRewardedAd(()=>{coins+=AD_COIN_REWARD;totalCoinsEarned+=AD_COIN_REWARD;save();spawnFloater(W/2,H*.73,'+'+AD_COIN_REWARD)});
     }
   }
