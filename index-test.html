@@ -2455,18 +2455,23 @@ function drawPlay(){
       }
     }
 
-    // Hint highlight: cheap pulse via globalAlpha + slightly larger stroke
-    // overlay instead of shadowBlur (which was a major perf hit on iOS WebKit
-    // — every alive arrow burned GPU bandwidth even when only one was hinted).
-    if(i===hintArrow&&hintTime>0&&!reducedMotion){
-      const pulse=.5+.5*sin(gt*6);
+    // Hint highlight: slow gentle pulse with soft glow halo. Only ONE arrow
+    // is ever hinted at a time, so shadowBlur is affordable here even though
+    // it's banned for the per-frame draw of every alive arrow.
+    const isHinted=i===hintArrow&&hintTime>0;
+    if(isHinted&&!reducedMotion){
+      // Slow pulse (~2.5s cycle) — subtle, not flashy.
+      const pulse=.5+.5*sin(gt*2.5);
       X.save();
-      X.globalAlpha=(.4+pulse*.5)*revealA;
+      // Soft glow halo
+      X.shadowColor=TH.star;
+      X.shadowBlur=6+pulse*8; // 6..14 px
+      X.globalAlpha=(.5+pulse*.35)*revealA; // 0.5..0.85
       drawArrowStatic(a,cs,gx,gy,TH.star,1,shakeOff);
       X.restore();
     }
 
-    const col=isShaking?TH.arrowBlock:(i===hintArrow&&hintTime>0?TH.star:arrowColor(a,i));
+    const col=isShaking?TH.arrowBlock:(isHinted?TH.star:arrowColor(a,i));
     drawArrowStatic(a,cs,gx,gy,col,revealA,shakeOff);
   }
 
