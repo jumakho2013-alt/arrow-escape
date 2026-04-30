@@ -421,9 +421,19 @@ let lastClick=null; // {x,y,t} for button press scale feedback
 // Zoom state (Play screen only, reset on each generateLevel)
 let zoomLevel=1, panX=0, panY=0;
 const MIN_ZOOM=1, MAX_ZOOM=2.5;
-let _pinchStartDist=0, _pinchStartZoom=1;
-let _panStart=null;       // {startX,startY,panX,panY} when single-finger drag starts
-const TAP_THRESHOLD=8;    // px before a finger drag overrides a tap
+
+// Pinch state — set on 2-finger touchstart, cleared on touchend.
+let _pinchStartDist=0;
+let _pinchStartZoom=1;
+let _pinchStartMid=null;   // {x,y} screen-coord midpoint at gesture start
+let _pinchStartWorld=null; // {x,y} world-coord point under that midpoint
+let _pinchStartPan=null;   // {x,y} pan at gesture start
+
+// 1-finger tap tracking — single-finger drag does NOT pan. Pan is 2-finger
+// only (per user feedback: 1-finger drag was hitting arrow tap detection).
+// Tap fires on touchend, only if total movement < TAP_THRESHOLD.
+let _tapStart=null;        // {x,y,t} when 1-finger touch begins
+const TAP_THRESHOLD=10;    // px — drag beyond this cancels the tap
 
 function _clampPan(){
   // Keep grid centered-ish: pan range scales with zoom so the player can
@@ -448,33 +458,33 @@ function gp(e){
   const r=C.getBoundingClientRect(),t=e.touches?e.touches[0]||e.changedTouches[0]:e;
   return{x:(t.clientX-r.left)/r.width*W,y:(t.clientY-r.top)/r.height*H};
 }
-
-// Helper: convert raw touch from event to logical coords. Used inside the
-// 2-finger pinch handler where we need both touches separately.
 function _gpTouch(t){
   const r=C.getBoundingClientRect();
   return{x:(t.clientX-r.left)/r.width*W,y:(t.clientY-r.top)/r.height*H};
 }
 
+// Mouse — desktop testing only; tap fires on mouseup if movement was small.
+// No mouse drag for pan (would conflict with 1-finger tap rule). Wheel +
+// Cmd/Ctrl zooms the grid for desktop test.
 C.addEventListener('mousedown',e=>{
   initA();
-  const p=gp(e);tapX=p.x;tapY=p.y;tapped=true;
-  _panStart={startX:p.x,startY:p.y,panX,panY};
+  const p=gp(e);
+  _tapStart={x:p.x,y:p.y,t:gt};
+  mx=p.x;my=p.y;
   lastClick={x:p.x,y:p.y,t:gt};
 });
 C.addEventListener('mousemove',e=>{
-  const p=gp(e);
-  if(_panStart){
-    const dx=p.x-_panStart.startX,dy=p.y-_panStart.startY;
-    if(Math.hypot(dx,dy)>TAP_THRESHOLD){
-      tapped=false;
-      if(zoomLevel>1){panX=_panStart.panX+dx;panY=_panStart.panY+dy;_clampPan();}
-    }
-  }
-  mx=p.x;my=p.y;
+  const p=gp(e);mx=p.x;my=p.y;
 });
-C.addEventListener('mouseup',()=>{_panStart=null;});
-// Desktop test: Cmd/Ctrl+wheel zooms the grid (matches macOS pinch)
+C.addEventListener('mouseup',e=>{
+  if(!_tapStart)return;
+  const p=gp(e);
+  const dx=p.x-_tapStart.x,dy=p.y-_tapStart.y;
+  if(Math.hypot(dx,dy)<TAP_THRESHOLD){
+    tapX=p.x;tapY=p.y;tapped=true;
+  }
+  _tapStart=null;
+});
 C.addEventListener('wheel',e=>{
   if(!(e.ctrlKey||e.metaKey))return;
   e.preventDefault();
@@ -482,58 +492,91 @@ C.addEventListener('wheel',e=>{
   _clampPan();
 },{passive:false});
 
+// Touch — strict separation:
+//   1 finger: tap on lift if movement < TAP_THRESHOLD. NO pan.
+//   2 fingers: pinch (zoom around finger midpoint) + pan (midpoint moves).
+//              Both happen simultaneously — natural Maps-app feel.
 C.addEventListener('touchstart',e=>{
   e.preventDefault();initA();
   if(e.touches.length===2){
-    // Pinch start — record initial finger distance in logical px
+    // Pinch+pan start — record fingers' midpoint, distance, current zoom/pan,
+    // and the WORLD coord under the midpoint. While the gesture runs we
+    // pin that world point under the midpoint, so the area the user grabbed
+    // stays under their fingers as zoom/pan change (canonical pinch-zoom
+    // behavior — same as Maps, Photos).
     const p1=_gpTouch(e.touches[0]),p2=_gpTouch(e.touches[1]);
     _pinchStartDist=Math.hypot(p2.x-p1.x,p2.y-p1.y);
     _pinchStartZoom=zoomLevel;
-    tapped=false; // cancel any pending tap from the first finger
-    _panStart=null;
+    const midX=(p1.x+p2.x)/2,midY=(p1.y+p2.y)/2;
+    _pinchStartMid={x:midX,y:midY};
+    _pinchStartWorld=_screenToWorld(midX,midY);
+    _pinchStartPan={x:panX,y:panY};
+    _tapStart=null; // 2 fingers down → not a tap, ever
     return;
   }
-  // 1-finger — existing single-tap behavior + remember start for potential pan
-  const p=gp(e);tapX=p.x;tapY=p.y;tapped=true;mx=p.x;my=p.y;
-  _panStart={startX:p.x,startY:p.y,panX,panY};
+  // 1 finger — record tap candidate. tapped=false until lift confirms small
+  // movement (so a swipe doesn't accidentally hit an arrow under the start
+  // point).
+  const p=gp(e);
+  _tapStart={x:p.x,y:p.y,t:gt};
+  mx=p.x;my=p.y;
   lastClick={x:p.x,y:p.y,t:gt};
 },{passive:false});
 
 C.addEventListener('touchmove',e=>{
   e.preventDefault();
-  if(e.touches.length===2){
-    // Pinch update
+  if(e.touches.length===2&&_pinchStartMid){
+    // Pinch+pan update
     const p1=_gpTouch(e.touches[0]),p2=_gpTouch(e.touches[1]);
     const d=Math.hypot(p2.x-p1.x,p2.y-p1.y);
+    const midX=(p1.x+p2.x)/2,midY=(p1.y+p2.y)/2;
+    // 1) Update zoom from finger spread
     if(_pinchStartDist>0){
       zoomLevel=clp(_pinchStartZoom*d/_pinchStartDist,MIN_ZOOM,MAX_ZOOM);
-      _clampPan();
     }
+    // 2) Compute pan so the original world-point still sits under the
+    // current finger midpoint. Forward transform:
+    //   screenX = panX + W/2 + (worldX - W/2) * zoom
+    // Solve for panX with current midX as the screen target:
+    panX=midX-W/2-(_pinchStartWorld.x-W/2)*zoomLevel;
+    panY=midY-H/2-(_pinchStartWorld.y-H/2)*zoomLevel;
+    _clampPan();
     return;
   }
-  // 1-finger move
+  // 1-finger move — track total movement so we can cancel the pending tap
+  // if it turns into a swipe. NO pan on 1 finger.
   const p=gp(e);
-  if(_panStart){
-    const dx=p.x-_panStart.startX,dy=p.y-_panStart.startY;
-    if(Math.hypot(dx,dy)>TAP_THRESHOLD){
-      tapped=false; // it's a drag, not a tap
-      if(zoomLevel>1){panX=_panStart.panX+dx;panY=_panStart.panY+dy;_clampPan();}
-    }
+  if(_tapStart){
+    const dx=p.x-_tapStart.x,dy=p.y-_tapStart.y;
+    if(Math.hypot(dx,dy)>TAP_THRESHOLD)_tapStart=null;
   }
   mx=p.x;my=p.y;
 },{passive:false});
 
 C.addEventListener('touchend',e=>{
-  if(e.touches.length===1){
-    // One finger released during pinch — let the remaining finger continue
-    // the gesture as a pan. Avoids a discontinuity / zoom-snap.
-    const p=_gpTouch(e.touches[0]);
-    _panStart={startX:p.x,startY:p.y,panX,panY};
-    _pinchStartDist=0;
+  if(e.touches.length===0&&_tapStart){
+    // Only fire tap on lift if movement stayed within threshold and no pinch
+    // ever started (touchstart with 2 fingers nulls _tapStart).
+    const r=C.getBoundingClientRect();
+    const t=e.changedTouches[0];
+    const x=(t.clientX-r.left)/r.width*W,y=(t.clientY-r.top)/r.height*H;
+    const dx=x-_tapStart.x,dy=y-_tapStart.y;
+    if(Math.hypot(dx,dy)<TAP_THRESHOLD){
+      tapX=x;tapY=y;tapped=true;
+    }
   }
-  if(e.touches.length===0){
-    _panStart=null;_pinchStartDist=0;
+  if(e.touches.length<2){
+    // Pinch ended (could be transitioning to 1 finger or to 0).
+    // Reset pinch tracking. The remaining finger (if any) is NOT promoted
+    // to a tap or pan — user has to lift fully and tap fresh.
+    _pinchStartDist=0;_pinchStartMid=null;_pinchStartWorld=null;
   }
+  if(e.touches.length===0)_tapStart=null;
+});
+
+C.addEventListener('touchcancel',()=>{
+  // Phone call interrupt, gesture timeout, etc — drop everything cleanly.
+  _pinchStartDist=0;_pinchStartMid=null;_pinchStartWorld=null;_tapStart=null;
 });
 
 function haptic(ms){try{navigator.vibrate(ms)}catch(e){}}
@@ -546,10 +589,19 @@ function haptic(ms){try{navigator.vibrate(ms)}catch(e){}}
 function _safeJSON(k){try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}}
 let S='menu'; // menu|play|complete|levels|settings|daily|challenge
 let level=+localStorage.getItem('ae_level')||1;
+// SANDBOX-ONLY: ?level=N in the URL jumps straight to that level so you can
+// preview generator changes without playing through the early levels. Also
+// unlocks all levels up to N in `maxLevel`. Doesn't persist to localStorage —
+// just affects the current session. NOT in production index.html.
+try{
+  const _u=new URL(location.href);
+  const _lv=parseInt(_u.searchParams.get('level'),10);
+  if(_lv>0&&_lv<10000){level=_lv;}
+}catch(e){}
 let stars=_safeJSON('ae_stars');
 let totalStars=Object.values(stars).reduce((a,b)=>a+b,0);
 // maxLevel = highest level ever reached. Recover from stars if ae_maxlevel missing.
-let maxLevel=+localStorage.getItem('ae_maxlevel')||level;
+let maxLevel=max(+localStorage.getItem('ae_maxlevel')||0,level);
 {const starKeys=Object.keys(stars).map(Number).filter(n=>n>0);
 if(starKeys.length>0)maxLevel=max(maxLevel,max(...starKeys)+1)}
 // New players start with 150 coins — enough to BUY one hint (100) and still
