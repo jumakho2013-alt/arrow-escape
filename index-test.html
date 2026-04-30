@@ -292,8 +292,19 @@ function resize(){
   let cw,ch;
   if(aspectDelta>.25){
     document.body.classList.add('letterboxed');
-    if(winRatio>wantRatio){ch=winH;cw=ch*wantRatio}
-    else{cw=winW;ch=cw/wantRatio}
+    // User feedback: strict 390:844 letterbox left huge empty bands on iPad
+    // portrait — looked like a phone game floating in the middle. Relax the
+    // aspect cap on tablet so canvas can be up to ~33% wider than native.
+    // Light horizontal stretch of game elements is acceptable for a puzzle;
+    // perfect aspect with empty side bars isn't worth the wasted screen.
+    const TABLET_MAX_RATIO=.62;
+    if(winRatio>wantRatio){
+      ch=winH;
+      cw=Math.min(winW,ch*TABLET_MAX_RATIO);
+    }else{
+      cw=winW;
+      ch=Math.min(winH,cw/wantRatio);
+    }
   }else{
     document.body.classList.remove('letterboxed');
     cw=winW;ch=winH;
