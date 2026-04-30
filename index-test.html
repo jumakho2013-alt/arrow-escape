@@ -1132,24 +1132,18 @@ function generateLevel(lvl,customSeed){
     }
   }
 
-  // Difficulty curve. Two changes addressing audit feedback "still too easy
-  // at lvl 100, 200, 300":
-  //   1. Steeper early ramp (power 0.8) front-loads density growth so by
-  //      level 50 the player already feels meaningful pressure, not a
-  //      practically-tutorial-grade puzzle.
-  //   2. Cap moved from lvl 250 to lvl 150 — fully maxed difficulty by
-  //      lvl 150 instead of dragging the ramp out indefinitely.
-  //   3. Max grid raised 24×32 → 26×34, max arrow length 30 → 33 — the
-  //      old plateau wasn't dense enough to feel "extreme" past lvl 250.
-  // Level 1    = gentle intro (10×13, short arrows, ample space)
-  // Level 50   = ~17×22 grid, length ~21 (was 12×17 / length 14)
-  // Level 100  = ~22×30 grid, length ~28 (was 16×21 / length 18)
-  // Level 150+ = max (26×34, length 33)
+  // Difficulty curve. Power-0.8 early ramp + cap at lvl 150 + max grid
+  // 26×34. Max arrow length raised 33 → 70 — competitor reference showed
+  // the visual "snake" feel comes from individual arrows being longer
+  // (40-80 cells) rather than from a single giant arrow blocking the
+  // grid. Plain tryBuildArrow with the strong turn bonus naturally
+  // produces winding paths up to maxLen, and they coexist with each
+  // other (each can fit because none monopolize escape lines).
   const p=min(1,Math.pow((lvl-1)/149,.8));
   const cols=floor(lrp(10,26,p)+.5);
   const rows=floor(lrp(13,34,p)+.5);
-  const minLen=2; // always accept short arrows to fill tight spaces
-  const maxLen=floor(lrp(10,33,p)+.5); // longer max = more space filled per arrow
+  const minLen=2;
+  const maxLen=floor(lrp(15,70,p)+.5);
 
   gridCols=cols;gridRows=rows;
 
@@ -1159,29 +1153,13 @@ function generateLevel(lvl,customSeed){
 
   const placed=[];
 
-  // === Pass 0: Warnsdorff "primary snake" arrow =====================
-  // Per audit + competitor research (Arrows Escape Puzzle, Arrow Jam Go),
-  // the visually distinctive feature of those games is ONE huge arrow that
-  // winds through ~half the grid like a snake, with smaller arrows packed
-  // around it. Plain proximity-greedy generation never produces this — it
-  // grows in clusters and stops short.
-  //
-  // Warnsdorff's heuristic (knight's-tour algorithm, 1823): at each step
-  // pick the unvisited neighbour with the FEWEST unvisited onward
-  // neighbours. This greedy choice paints the generator into corners
-  // first, which forces the path to wind back and fill the entire grid
-  // instead of getting stuck in the middle. Result: a single 60-200 cell
-  // arrow on a typical level. Head sits on a grid edge so the escape
-  // line is automatically outside the grid.
-  if(lvl>=4){ // skip on tutorial levels — they should stay readable
-    const primary=buildPrimaryArrow(occ,rows,cols,rng);
-    if(primary){
-      for(const[r,c] of primary.cells)occ[r][c]=placed.length;
-      placed.push(primary);
-    }
-  }
-
-  // Pass 1: long arrows with turns — the main visual content
+  // Pass 1: long arrows with turns — the main visual content. With maxLen
+  // raised to 70, each arrow can wind through 40-60 cells producing a
+  // visible snake-like coil without blocking the rest of the grid.
+  // (The Warnsdorff "primary snake" approach was tried — it produced a
+  // single 200-cell arrow but then no fillers could place because the
+  // snake winds through every row and column, blocking all escape lines.
+  // Long-but-not-monopolistic arrows from tryBuildArrow are a better fit.)
   let safety=3000;
   while(safety-->0){
     const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed);
