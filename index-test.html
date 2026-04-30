@@ -124,13 +124,9 @@ const lrp=(a,b,t)=>a+(b-a)*t;
 // ================================================================
 //  THEME
 // ================================================================
-// Cache invalidation flags + glass cache — MUST be declared before
-// applyTheme/resize run (they flip the flag and clear the cache). Both are
-// `let`/`const` so they live in temporal dead zone before this point — the
-// previous build crashed because `_clearGlassCache` was hoisted (function
-// decl) but `_glassCache` (const) was not, so calling it at startup threw.
+// Background cache dirty flag — flipped by applyTheme()/resize() so the next
+// frame regenerates the offscreen background canvas instead of reusing it.
 let _bgCacheDirty=true;
-const _glassCache=new Map();
 let darkMode=localStorage.getItem('ae_theme')==='dark';
 // prefers-reduced-motion: when true, code paths that draw decorative motion
 // (background floating arrows, hint pulse, confetti, slide-in animations)
@@ -150,7 +146,6 @@ function applyTheme(){
   // light scrollbars in dark mode, etc.
   document.documentElement.style.colorScheme=darkMode?'dark':'light';
   _bgCacheDirty=true;
-  if(typeof _clearGlassCache==='function')_clearGlassCache();
   // Match status bar / notch / nav bar to app theme
   const col=darkMode?'#1a1a2e':'#f5f2ed';
   const m=document.getElementById('themeColorMeta');
@@ -666,6 +661,10 @@ function haptic(ms){try{navigator.vibrate(ms)}catch(e){}}
 // Parse JSON from localStorage, fall back to {} if missing or corrupted —
 // hand-edited or partially-written values would otherwise crash app startup.
 function _safeJSON(k){try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}}
+// Guard against Safari Private Browsing (setItem throws QuotaExceededError),
+// disk full, or any other localStorage failure. We'd rather lose a save than
+// crash the running game. Used everywhere instead of bare localStorage.setItem.
+function _safeSet(k,v){try{localStorage.setItem(k,String(v))}catch(e){}}
 let S='menu'; // menu|play|complete|levels|settings|daily|challenge
 let level=+localStorage.getItem('ae_level')||1;
 let FORCE_FRESH_LEVELS=false; // SANDBOX-ONLY: bypass levels-baked.js with ?fresh=1
@@ -755,19 +754,19 @@ const DX=[1,0,-1,0],DY=[0,-1,0,1];
 const DIR_NAMES=['→','↑','←','↓'];
 
 function save(){
-  localStorage.setItem('ae_level',level);
-  if(level>maxLevel){maxLevel=level;localStorage.setItem('ae_maxlevel',maxLevel)}
-  localStorage.setItem('ae_coins',coins);
-  localStorage.setItem('ae_stars',JSON.stringify(stars));
-  localStorage.setItem('ae_ach',JSON.stringify(achUnlocked));
-  localStorage.setItem('ae_total_coins',totalCoinsEarned);
-  localStorage.setItem('ae_streakdays',streakDays);
-  localStorage.setItem('ae_lastday',lastPlayDay);
-  localStorage.setItem('ae_perfects',totalPerfect);
-  localStorage.setItem('ae_dailies',totalDailies);
-  localStorage.setItem('ae_nohint',noHintCount);
-  localStorage.setItem('ae_fastest',fastestLevel);
-  localStorage.setItem('ae_playtime',floor(totalPlayTime));
+  _safeSet('ae_level',level);
+  if(level>maxLevel){maxLevel=level;_safeSet('ae_maxlevel',maxLevel)}
+  _safeSet('ae_coins',coins);
+  _safeSet('ae_stars',JSON.stringify(stars));
+  _safeSet('ae_ach',JSON.stringify(achUnlocked));
+  _safeSet('ae_total_coins',totalCoinsEarned);
+  _safeSet('ae_streakdays',streakDays);
+  _safeSet('ae_lastday',lastPlayDay);
+  _safeSet('ae_perfects',totalPerfect);
+  _safeSet('ae_dailies',totalDailies);
+  _safeSet('ae_nohint',noHintCount);
+  _safeSet('ae_fastest',fastestLevel);
+  _safeSet('ae_playtime',floor(totalPlayTime));
 }
 
 // Spawn a floating "+N" text for a coin reward — quick reward feedback
@@ -913,6 +912,10 @@ async function initAdMob(){
   try{
     if(typeof Capacitor==='undefined'||!Capacitor.Plugins.AdMob)return;
     const AdMob=Capacitor.Plugins.AdMob;
+    // Defensive: if initAdMob() ever runs twice (resume-from-background flow,
+    // future refactor, retry path) the listeners would stack and reward
+    // callbacks would fire N times. Strip any prior listeners up front.
+    try{await AdMob.removeAllListeners()}catch(_){}
 
     // On iOS: explicitly request ATT permission FIRST, BEFORE initializing AdMob.
     // Apple rejected v1.0 because the ATT prompt was missing. The plugin's
@@ -1849,12 +1852,12 @@ function tapArrowByIndex(idx){
         if(isWeekly){
           if(!isWeeklyDone()){
             gained=WEEKLY_REWARD;
-            localStorage.setItem(weeklyDoneKey(),'1');
+            _safeSet(weeklyDoneKey(),'1');
           }
         }else if(isDaily){
           if(!isDailyDone()){
             gained=DAILY_REWARD;
-            localStorage.setItem(dailyDoneKey(),'1');
+            _safeSet(dailyDoneKey(),'1');
             totalDailies++;
           }
         }else{
@@ -1864,7 +1867,7 @@ function tapArrowByIndex(idx){
           gained=5+s*5;
           const key='ae_best_'+level;
           const prev=+localStorage.getItem(key)||99999;
-          if(timer<prev)localStorage.setItem(key,floor(timer));
+          if(timer<prev)_safeSet(key,floor(timer));
           bestTime=min(prev,floor(timer));
           if(undosLeft===3)streak++;else streak=0;
           if(wasNewStars&&perfect)totalPerfect++;
@@ -2165,11 +2168,6 @@ function _renderGlass(w,h,r,dark){
   x.restore();
   return cv;
 }
-// Glass overlay disabled per UX feedback — looked muddy in dark mode and felt
-// "uneven" in both themes. Kept as a no-op so existing call sites stay valid.
-function glass(x,y,w,h,r){}
-function _clearGlassCache(){_glassCache.clear();}
-
 // True when a modal/overlay is on top — buttons under must NOT consume the
 // tap (the overlay needs it). Also disables their hover state for clarity.
 function _inputBlocked(){return langPickerOpen}
@@ -2283,7 +2281,6 @@ function drawMenu(){
   const spY=H*.33,spW=300,spH=66;
   X.fillStyle=TH.cardBg;
   X.beginPath();X.roundRect(W/2-spW/2,spY-spH/2,spW,spH,14);X.fill();
-  glass(W/2-spW/2,spY-spH/2,spW,spH,14);
   X.strokeStyle=TH.border;X.lineWidth=1;
   X.beginPath();X.roundRect(W/2-spW/2,spY-spH/2,spW,spH,14);X.stroke();
   const col1=W/2-spW/2+spW*.125,col2=W/2-spW/2+spW*.375,col3=W/2-spW/2+spW*.625,col4=W/2-spW/2+spW*.875;
@@ -2926,7 +2923,6 @@ function drawAchPopup(){
   X.beginPath();X.roundRect(px,py+6,pw,ph,14);X.fill();
   X.fillStyle=TH.surface;
   X.beginPath();X.roundRect(px,py,pw,ph,14);X.fill();
-  glass(px,py,pw,ph,14);
   X.strokeStyle=TH.star+'80';X.lineWidth=2;
   X.beginPath();X.roundRect(px,py,pw,ph,14);X.stroke();
   // Star icon
@@ -3026,11 +3022,11 @@ function drawSettings(){
 
   // Sound
   if(drawBtn(t('sound')+': '+(sndOn?t('on'):t('off')),W/2,165,260,44)){
-    sndOn=!sndOn;localStorage.setItem('ae_sound',sndOn?'1':'0');
+    sndOn=!sndOn;_safeSet('ae_sound',sndOn?'1':'0');
   }
   // Dark mode
   if(drawBtn(t('theme')+': '+(darkMode?t('themeDark'):t('themeLight')),W/2,220,260,44)){
-    darkMode=!darkMode;localStorage.setItem('ae_theme',darkMode?'dark':'light');applyTheme();
+    darkMode=!darkMode;_safeSet('ae_theme',darkMode?'dark':'light');applyTheme();
   }
   // Watch Ad for Coins
   if(drawBtn(t('watchAd')+' → +'+AD_COIN_REWARD+' '+t('coins'),W/2,295,260,44,TH.star)){
@@ -3109,7 +3105,7 @@ function drawLangPicker(){
     txt(L.name,W/2,ry+rowH/2,15,sel?rowSel:rowText);
     if(sel){txt('✓',px+panelW-30,ry+rowH/2,16,rowSel,'right')}
     if(tapped&&abs(tapX-W/2)<panelW/2-12&&abs(tapY-(ry+rowH/2))<rowH/2){
-      lang=L.code;localStorage.setItem('ae_lang',lang);
+      lang=L.code;_safeSet('ae_lang',lang);
       langPickerOpen=false;sfx.tap();haptic(8);tapped=false;return;
     }
   }
@@ -3168,7 +3164,6 @@ function drawLevels(){
       X.fillStyle=TH.cardBg;
     }
     X.beginPath();X.roundRect(x-cardW/2,y-cardH/2,cardW,cardH,10);X.fill();
-    glass(x-cardW/2,y-cardH/2,cardW,cardH,10);
     // Border
     X.strokeStyle=current?TH.accent:(done?TH.star+'60':TH.border);
     X.lineWidth=current?2:1;
