@@ -41,6 +41,13 @@ canvas{display:block}
 </head>
 <body class="light">
 <canvas id="c"></canvas>
+<!-- Pre-baked levels 1..200 (sandbox only). The improved procedural
+     generator is run at build time and the best-scoring layout for each
+     level number is frozen here. window.BAKED_LEVELS is consulted in
+     generateLevel() so every player sees the same puzzle for level N
+     (handcrafted-feel without manually designing 200 boards). Procedural
+     generation still runs for level 201+ and for daily/weekly seeds. -->
+<script src="levels-baked.js"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1078,6 +1085,23 @@ function generateLevel(lvl,customSeed){
   zoomLevel=1;panX=0;panY=0;_pinchStartDist=0;_panStart=null;
   updateStreak();
 
+  // Baked-level fast path: levels 1..200 (regular play only — daily/weekly
+  // pass customSeed and stay procedural). The pre-built layout was scored
+  // and selected for tangledness during the bake, so every player sees the
+  // same puzzle for the same level number.
+  if(customSeed==null&&lvl>=1&&lvl<=200&&typeof window!=='undefined'&&window.BAKED_LEVELS){
+    const baked=window.BAKED_LEVELS[lvl-1];
+    if(baked){
+      gridCols=baked.cols;gridRows=baked.rows;
+      arrows=baked.arrows.map(a=>({cells:a.c.map(c=>[c[0],c[1]]),dir:a.d,alive:true}));
+      minMoves=arrows.length;
+      moves=0;timer=0;undosLeft=3;
+      const key='ae_best_'+lvl;
+      bestTime=+localStorage.getItem(key)||0;
+      return;
+    }
+  }
+
   // Difficulty curve. Two changes addressing audit feedback "still too easy
   // at lvl 100, 200, 300":
   //   1. Steeper early ramp (power 0.8) front-loads density growth so by
@@ -1108,7 +1132,7 @@ function generateLevel(lvl,customSeed){
   // Pass 1: long arrows with turns — the main visual content
   let safety=3000;
   while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen);
+    const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed);
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
@@ -1117,7 +1141,7 @@ function generateLevel(lvl,customSeed){
   // Pass 2: short 2-3 cell fillers for medium gaps
   safety=3000;
   while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,2,3);
+    const arrow=tryBuildArrow(occ,rows,cols,rng,2,3,placed);
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
@@ -1126,7 +1150,7 @@ function generateLevel(lvl,customSeed){
   // Pass 3: 1-cell arrows with valid escape lines (guaranteed solvable)
   safety=3000;
   while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,1,1);
+    const arrow=tryBuildArrow(occ,rows,cols,rng,1,1,placed);
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
@@ -1148,7 +1172,10 @@ function generateLevel(lvl,customSeed){
 // Build one arrow by EXHAUSTIVE candidate search.
 // Special case: when minLen==1 && maxLen==1, build a single-cell arrow (just a
 // head with a direction). Used in the gap-fill pass to plug isolated empties.
-function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen){
+// `placed` (optional) is the array of arrows already placed — used for
+// direction-variance penalty (#6: discourage clusters of same-direction
+// arrows so the puzzle isn't solvable by "tap everything pointing east").
+function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed){
   const oneCell=(minLen===1&&maxLen===1);
   const candidates=[];
   for(let r=0;r<rows;r++){
@@ -1172,13 +1199,19 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen){
         if(!clear)continue;
         // Score:
         //   +1.5 per neighbor already occupied → tight packing (cluster grows)
+        //   -2.0 if neighbor arrow has the SAME escape direction (#6 direction
+        //        variance — prevents "all arrows point east" clusters that the
+        //        player can solve by tap-spamming in one axis)
         //   -0.12 × Chebyshev distance from center → seed the first arrow near
-        //   the middle of the grid so the cluster has room to expand outward
-        //   in all directions (prevents hollow-center effect).
+        //        the middle of the grid so the cluster has room to expand
+        //        outward in all directions (prevents hollow-center effect)
         let s=rng();
         for(let dd=0;dd<4;dd++){
           const nr=r+DY[dd],nc=c+DX[dd];
-          if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1)s+=1.5;
+          if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1){
+            s+=1.5;
+            if(placed&&placed[occ[nr][nc]]&&placed[occ[nr][nc]].dir===d)s-=2.0;
+          }
         }
         const cR=(rows-1)/2,cC=(cols-1)/2;
         const distCenter=max(abs(r-cR),abs(c-cC));
@@ -1211,6 +1244,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen){
     let br=br0,bc=bc0;
     let lastStepDir=bd;
     let straightRun=1;
+    let turnCount=0; // #4: count direction changes during growth
 
     while(cells.length<targetLen){
       const opts=[];
@@ -1259,8 +1293,13 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen){
       cells.unshift(pick.cell);
       used.add(pick.cell[0]+','+pick.cell[1]);
       br=pick.cell[0];bc=pick.cell[1];
-      if(pick.d===lastStepDir)straightRun++;else{straightRun=1;lastStepDir=pick.d}
+      if(pick.d===lastStepDir)straightRun++;else{straightRun=1;lastStepDir=pick.d;turnCount++}
     }
+
+    // #4 Min turn requirement: long arrows (>5 cells) must twist at least
+    // twice. A 6-cell L-shape (1 turn) was visually flat and let the player
+    // solve it by sliding their finger. Reject and try the next candidate.
+    if(cells.length>5&&turnCount<2)continue;
 
     if(cells.length>=minLen)return{cells,dir};
   }
