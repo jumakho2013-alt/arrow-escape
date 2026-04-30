@@ -19,7 +19,12 @@
 })();
 </script>
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<!-- black-translucent makes the status bar transparent (time/WiFi/battery
+     overlay the page bg) so the canvas can extend up under the notch /
+     Dynamic Island instead of sitting BELOW an opaque white bar. The
+     `safeTop` value (read from env(safe-area-inset-top) in JS) shifts game
+     UI below the notch. Required for true edge-to-edge PWA on iOS. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Stray Arrows">
 <meta name="description" content="Untangle stray arrows! Tap arrows to escape in the right order.">
 <link rel="manifest" href="manifest.json">
