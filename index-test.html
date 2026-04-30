@@ -450,23 +450,29 @@ function _gridCenter(){
 }
 
 function _clampPan(){
+  // At zoom=1 there's nothing to pan — lock to default to avoid the grid
+  // sliding around aimlessly when the player two-fingers without spreading.
+  if(zoomLevel<=1.001){panX=0;panY=0;return;}
   const cs=getCellSize();
   const gx=getGridX(),gy=getGridY();
   const gridW=gridCols*cs,gridH=gridRows*cs;
   const c=_gridCenter();
+  // The user wanted to be able to drag any edge of the grid all the way to
+  // the CENTER of the viewport (not merely to the viewport edge), plus a
+  // little overshoot — so they can comfortably aim a corner arrow without
+  // the header or hint bar occluding it. Pan range = "edge at center" plus
+  // a 12% overshoot of viewport size on each side.
+  const overshootY=H*.12,overshootX=W*.12;
   // Forward (grid-center pivot):
-  //   screenY = (worldY - c.y)*zoom + c.y + panY
-  // Solve for panY at viewport edges:
-  //   grid TOP at screen 0:    panY = -c.y - (gy - c.y) * zoom
-  //   grid BOT at screen H:    panY =  H - c.y - (gy+gridH - c.y) * zoom
-  const panY_topAt0=-c.y-(gy-c.y)*zoomLevel;
-  const panY_botAtH=H-c.y-(gy+gridH-c.y)*zoomLevel;
-  panY=clp(panY,Math.min(panY_topAt0,panY_botAtH),Math.max(panY_topAt0,panY_botAtH));
-  // Same for X — let either left or right edge reach the corresponding
-  // viewport edge.
-  const panX_leftAt0=-c.x-(gx-c.x)*zoomLevel;
-  const panX_rightAtW=W-c.x-(gx+gridW-c.x)*zoomLevel;
-  panX=clp(panX,Math.min(panX_leftAt0,panX_rightAtW),Math.max(panX_leftAt0,panX_rightAtW));
+  //   screenY = panY + c.y + (worldY - c.y) * zoom
+  // Pan that puts grid TOP at H/2 (+overshoot below):
+  const panY_topAtMid=H/2+overshootY-c.y-(gy-c.y)*zoomLevel;
+  // Pan that puts grid BOT at H/2 (-overshoot above):
+  const panY_botAtMid=H/2-overshootY-c.y-(gy+gridH-c.y)*zoomLevel;
+  panY=clp(panY,Math.min(panY_topAtMid,panY_botAtMid),Math.max(panY_topAtMid,panY_botAtMid));
+  const panX_leftAtMid=W/2+overshootX-c.x-(gx-c.x)*zoomLevel;
+  const panX_rightAtMid=W/2-overshootX-c.x-(gx+gridW-c.x)*zoomLevel;
+  panX=clp(panX,Math.min(panX_leftAtMid,panX_rightAtMid),Math.max(panX_leftAtMid,panX_rightAtMid));
 }
 
 // Convert a screen-space point (logical W/H coords from gp()) to world-space
