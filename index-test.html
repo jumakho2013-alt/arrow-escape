@@ -65,7 +65,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777585183"></script>
+<script src="levels-baked.js?v=1777591604"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1166,7 +1166,7 @@ function generateLevel(lvl,customSeed){
   // each 10-level block is felt; user feedback at lvl 67 said "more or
   // less normal now, just a touch harder per step" so we bring the max
   // grid (22×30) closer in by ~20%.
-  const p=min(1,Math.pow((lvl-1)/89,.72));
+  const p=min(1,Math.pow((lvl-1)/74,.66));
   const cols=floor(lrp(10,22,p)+.5);
   const rows=floor(lrp(13,30,p)+.5);
   const minLen=2;
