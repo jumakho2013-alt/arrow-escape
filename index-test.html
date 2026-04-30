@@ -65,7 +65,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777576017"></script>
+<script src="levels-baked.js?v=1777583820"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -670,6 +670,9 @@ let S='menu'; // menu|play|complete|levels|settings|daily|challenge
 let level=+localStorage.getItem('ae_level')||1;
 let FORCE_FRESH_LEVELS=false; // SANDBOX-ONLY: bypass levels-baked.js with ?fresh=1
 let ALLOW_DOT_FILL=false; // SANDBOX-ONLY: ?dots=1 restores 1-cell filler arrows
+let CHAIN_MODE=true; // Variant D enabled by default; ?chains=0 to disable
+let CLUSTERS_MODE=true; // Variant E enabled by default; ?clusters=0 to disable
+let _clusterCenters=[]; // Set per-level by generateLevel; read by tryBuildArrow
 // SANDBOX-ONLY: ?level=N in the URL jumps straight to that level so you can
 // preview generator changes without playing through the early levels. Also
 // unlocks all levels up to N in `maxLevel`. Doesn't persist to localStorage —
@@ -680,6 +683,8 @@ try{
   if(_lv>0&&_lv<10000){level=_lv;}
   FORCE_FRESH_LEVELS=_u.searchParams.get('fresh')==='1';
   ALLOW_DOT_FILL=_u.searchParams.get('dots')==='1';
+  if(_u.searchParams.has('chains'))CHAIN_MODE=_u.searchParams.get('chains')==='1';
+  if(_u.searchParams.has('clusters'))CLUSTERS_MODE=_u.searchParams.get('clusters')==='1';
 }catch(e){}
 let stars=_safeJSON('ae_stars');
 let totalStars=Object.values(stars).reduce((a,b)=>a+b,0);
@@ -1131,6 +1136,8 @@ function generateLevel(lvl,customSeed){
   // pass customSeed and stay procedural). The pre-built layout was scored
   // and selected for tangledness during the bake, so every player sees the
   // same puzzle for the same level number.
+  // Braid mode forces fresh procedural — baked levels were produced without
+  // body-overlap and would not show the new mechanic.
   if(!FORCE_FRESH_LEVELS&&customSeed==null&&lvl>=1&&lvl<=200&&typeof window!=='undefined'&&window.BAKED_LEVELS){
     const baked=window.BAKED_LEVELS[lvl-1];
     if(baked){
@@ -1156,13 +1163,26 @@ function generateLevel(lvl,customSeed){
   // each 10-level block is felt; user feedback at lvl 67 said "more or
   // less normal now, just a touch harder per step" so we bring the max
   // grid (22×30) closer in by ~20%.
-  const p=min(1,Math.pow((lvl-1)/119,.8));
+  const p=min(1,Math.pow((lvl-1)/89,.72));
   const cols=floor(lrp(10,22,p)+.5);
   const rows=floor(lrp(13,30,p)+.5);
   const minLen=2;
   const maxLen=floor(lrp(18,74,p)+.5);
 
   gridCols=cols;gridRows=rows;
+
+  // Variant E — pick 3 cluster centers; scoring penalises cells far from
+  // the nearest one so arrows form separate islands. _clusterCenters is
+  // module-level so tryBuildArrow can read it (no extra parameter).
+  _clusterCenters=[];
+  if(CLUSTERS_MODE){
+    const numClusters=3;
+    for(let i=0;i<numClusters;i++){
+      const baseR=floor((i+.5)/numClusters*rows);
+      const baseC=floor((.3+.4*rng())*cols);
+      _clusterCenters.push({r:baseR,c:baseC});
+    }
+  }
 
   // occ[r][c] = arrow index that owns this cell, or -1
   const occ=[];
@@ -1550,9 +1570,11 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         }
         // Escape line from head to grid edge must be clear of existing arrows
         let clear=true;
+        let escLen=0;
         let cr=r+DY[d],cc=c+DX[d];
         while(cr>=0&&cr<rows&&cc>=0&&cc<cols){
           if(occ[cr][cc]!==-1){clear=false;break}
+          escLen++;
           cr+=DY[d];cc+=DX[d];
         }
         if(!clear)continue;
@@ -1581,6 +1603,21 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         const cR=(rows-1)/2,cC=(cols-1)/2;
         const distCenter=max(abs(r-cR),abs(c-cC));
         s-=distCenter*.12;
+        // Variant D — chain mode bonus: prefer heads with LONG escape lines.
+        // Each cell on the line is potential blocker once a later arrow's
+        // body lands there, which creates a dependency chain at game time.
+        if(CHAIN_MODE)s+=escLen*.5;
+        // Variant E — clusters mode penalty: arrow heads far from any
+        // cluster center get strongly docked, so heads gather around the
+        // chosen island centers and leave empty corridors between them.
+        if(CLUSTERS_MODE&&_clusterCenters.length){
+          let minD=Infinity;
+          for(const cc of _clusterCenters){
+            const dd=max(abs(r-cc.r),abs(c-cc.c));
+            if(dd<minD)minD=dd;
+          }
+          s-=minD*.5;
+        }
         candidates.push({hr:r,hc:c,dir:d,s});
       }
     }
@@ -1665,6 +1702,29 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         // with the hard cap above, straight runs of 3+ are statistically
         // rare and never hit the wall-hugging "tap outer ring" exploit.
         else if(straightRun>=2)s-=3.5;
+        // Variant D — chain mode: STRONG bonus if this cell is on the escape
+        // line of an already-placed arrow. That arrow solves AFTER this one
+        // in game order; placing our body on its escape line means the player
+        // can only solve it once we're removed → adds one link to the chain.
+        if(CHAIN_MODE&&placed){
+          let crossings=0;
+          for(let j=0;j<placed.length;j++){
+            const o=placed[j];
+            const oh=o.cells[o.cells.length-1];
+            if(onEscapeLine(r,c,oh[0],oh[1],o.dir))crossings++;
+          }
+          s+=crossings*2.5;
+        }
+        // Variant E — clusters mode: penalty for body cells far from nearest
+        // cluster center, keeping the arrow inside its assigned island.
+        if(CLUSTERS_MODE&&_clusterCenters.length){
+          let minD=Infinity;
+          for(const cc of _clusterCenters){
+            const dd=max(abs(r-cc.r),abs(c-cc.c));
+            if(dd<minD)minD=dd;
+          }
+          s-=minD*.4;
+        }
         return{cell:[r,c],d,s};
       });
       scored.sort((a,b)=>b.s-a.s);
@@ -2289,9 +2349,10 @@ function drawMenu(){
   if(availableUpdate){
     const bY=H*.91,bW=240,bH=28;
     const hv=abs(mx-W/2)<bW/2&&abs(my-bY)<bH/2;
-    X.fillStyle=hv?TH.accent+'40':TH.accent+'25';
+    // Design system tokens (matches drawBigBtn): fill 18/30, stroke 50, lw 1.5
+    X.fillStyle=hv?TH.accent+'30':TH.accent+'18';
     X.beginPath();X.roundRect(W/2-bW/2,bY-bH/2,bW,bH,bH/2);X.fill();
-    X.strokeStyle=TH.accent+'80';X.lineWidth=1;
+    X.strokeStyle=TH.accent+'50';X.lineWidth=1.5;
     X.beginPath();X.roundRect(W/2-bW/2,bY-bH/2,bW,bH,bH/2);X.stroke();
     txt(t('updateAvailable')+' v'+availableUpdate,W/2,bY,11,TH.accent);
     if(tapped&&abs(tapX-W/2)<bW/2&&abs(tapY-bY)<bH/2){
@@ -2526,9 +2587,10 @@ function drawPlay(){
   const by=H*.93,bw=130,bh=34;
   const _drawActionBtn=(bx,label,cost,enabled,color)=>{
     const hv=abs(mx-bx)<bw/2&&abs(my-by)<bh/2;
-    X.fillStyle=enabled?(hv?color+'35':color+'20'):TH.btnBg;
+    // Design system: matches drawBigBtn tokens (fill 18/30, stroke 50, lw 1.5)
+    X.fillStyle=enabled?(hv?color+'30':color+'18'):TH.btnBg;
     X.beginPath();X.roundRect(bx-bw/2,by-bh/2,bw,bh,bh/2);X.fill();
-    X.strokeStyle=enabled?color+'60':TH.border;X.lineWidth=1;
+    X.strokeStyle=enabled?color+'50':TH.border;X.lineWidth=1.5;
     X.beginPath();X.roundRect(bx-bw/2,by-bh/2,bw,bh,bh/2);X.stroke();
     // Label aligned LEFT inside the button (so coin/cost gets clean space on the right)
     const labelColor=enabled?TH.text:TH.textDim;
@@ -2901,10 +2963,10 @@ function drawGameOver(){
   const canContinue=coins>=CONTINUE_COST;
   const cby=H*.58,cbw=220,cbh=42;
   const cbhv=abs(mx-W/2)<cbw/2&&abs(my-cby)<cbh/2;
-  X.fillStyle=canContinue?(cbhv?TH.star+'35':TH.star+'20'):TH.btnBg;
+  // Design system tokens (matches drawBigBtn): fill 18/30, stroke 50, lw 1.5
+  X.fillStyle=canContinue?(cbhv?TH.star+'30':TH.star+'18'):TH.btnBg;
   X.beginPath();X.roundRect(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);X.fill();
-  glass(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);
-  X.strokeStyle=canContinue?TH.star+'70':TH.border;X.lineWidth=1.5;
+  X.strokeStyle=canContinue?TH.star+'50':TH.border;X.lineWidth=1.5;
   X.beginPath();X.roundRect(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);X.stroke();
   // Layout: label slightly LEFT of center, price block slightly RIGHT.
   // Was W/2-28 / +22 / +33 — Russian "ПРОДОЛЬЖИТЬ" with its tall ь visually
