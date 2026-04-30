@@ -33,6 +33,12 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;touch-action:none}
 html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;display:flex;justify-content:center;align-items:center;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Nunito',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+/* On phones (non-letterbox): pin canvas to the TOP of the viewport so it
+   extends UP under the notch / Dynamic Island. The canvas height is
+   shortened by safeBottom in resize() so the bottom edge sits just above
+   the home-indicator strip. iPad letterbox keeps the default center
+   alignment via the .letterboxed class below. */
+body:not(.letterboxed){align-items:flex-start}
 /* No safe-area padding — canvas extends edge-to-edge under the notch.
    Body bg shows a faint dot pattern in the letterbox area on tablets /
    landscape, so the empty space doesn't feel empty. iPhone fills the
@@ -282,7 +288,13 @@ function resize(){
   //      landscape the same shape sits in the middle. The letterbox area
   //      shows the dot pattern from body bg, so the empty space reads as
   //      a deliberate frame instead of an obvious crop.
-  const winW=innerWidth||W,winH=innerHeight||H;
+  // Read the safe-area insets BEFORE sizing the canvas. On iOS PWA in
+  // standalone mode (apple-mobile-web-app-status-bar-style=black-translucent)
+  // innerHeight includes the home-indicator strip at the bottom, so without
+  // this correction the canvas extends under the indicator and bottom UI
+  // (Hint/Skip pill, version label) ends up "floating" above an empty band.
+  const sa=_readSafeArea();
+  const winW=innerWidth||W,winH=(innerHeight||H)-sa.b;
   const wantRatio=W/H;
   const winRatio=winW/winH;
   const aspectDelta=Math.abs(winRatio-wantRatio)/wantRatio;
@@ -303,7 +315,6 @@ function resize(){
   C.style.width=cw+'px';C.style.height=ch+'px';
   X.setTransform(dpr,0,0,dpr,0,0);
   scaleY=ch/H||1;
-  const sa=_readSafeArea();
   safeTop   =sa.t/scaleY;
   safeBottom=sa.b/scaleY;
   safeLeft  =sa.l/((cw/W)||1);
