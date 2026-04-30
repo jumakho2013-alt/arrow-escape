@@ -1159,6 +1159,28 @@ function generateLevel(lvl,customSeed){
 
   const placed=[];
 
+  // === Pass 0: Warnsdorff "primary snake" arrow =====================
+  // Per audit + competitor research (Arrows Escape Puzzle, Arrow Jam Go),
+  // the visually distinctive feature of those games is ONE huge arrow that
+  // winds through ~half the grid like a snake, with smaller arrows packed
+  // around it. Plain proximity-greedy generation never produces this — it
+  // grows in clusters and stops short.
+  //
+  // Warnsdorff's heuristic (knight's-tour algorithm, 1823): at each step
+  // pick the unvisited neighbour with the FEWEST unvisited onward
+  // neighbours. This greedy choice paints the generator into corners
+  // first, which forces the path to wind back and fill the entire grid
+  // instead of getting stuck in the middle. Result: a single 60-200 cell
+  // arrow on a typical level. Head sits on a grid edge so the escape
+  // line is automatically outside the grid.
+  if(lvl>=4){ // skip on tutorial levels — they should stay readable
+    const primary=buildPrimaryArrow(occ,rows,cols,rng);
+    if(primary){
+      for(const[r,c] of primary.cells)occ[r][c]=placed.length;
+      placed.push(primary);
+    }
+  }
+
   // Pass 1: long arrows with turns — the main visual content
   let safety=3000;
   while(safety-->0){
@@ -1197,6 +1219,81 @@ function generateLevel(lvl,customSeed){
 
   const key='ae_best_'+lvl;
   bestTime=+localStorage.getItem(key)||0;
+}
+
+// Build the "primary snake" — one long winding arrow covering ~half of the
+// grid via Warnsdorff's heuristic (move to the unvisited neighbour with
+// fewest onward unvisited neighbours). The arrow head ends up on a grid
+// edge so the escape line is outside the grid (automatic clear). The body
+// trails through the interior in a snake pattern.
+function buildPrimaryArrow(occ,rows,cols,rng){
+  // Collect free edge cells; pick a random one as the HEAD (the cell the
+  // player taps; arrow flies outward from there).
+  const edges=[];
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      if(occ[r][c]!==-1)continue;
+      if(r===0||r===rows-1||c===0||c===cols-1)edges.push({r,c});
+    }
+  }
+  if(!edges.length)return null;
+  const start=edges[Math.floor(rng()*edges.length)];
+
+  // Determine head's escape direction (outward from edge). For corner
+  // cells either of two outward directions is valid — pick one.
+  // DX=[1,0,-1,0], DY=[0,-1,0,1]  (right, up, left, down)
+  let dir;
+  if(start.r===0)dir=1;       // top edge → up
+  else if(start.r===rows-1)dir=3; // bottom → down
+  else if(start.c===0)dir=2;  // left → left
+  else dir=0;                  // right → right
+
+  // Warnsdorff fill from head inward.
+  const path=[[start.r,start.c]];
+  const visited=new Set();
+  visited.add(start.r+','+start.c);
+  // Aim for ~30% of cells. Higher fractions choke the filler passes —
+  // the snake winds through every row/column, so other arrows can't
+  // place an escape line that doesn't cross it, and the level ends up
+  // as one solo snake (not playable). Floor at 8.
+  const freeCells=rows*cols;
+  const targetLen=Math.max(8,Math.floor(freeCells*.3));
+
+  let curR=start.r,curC=start.c;
+  while(path.length<targetLen){
+    const opts=[];
+    for(let d=0;d<4;d++){
+      const nr=curR+DY[d],nc=curC+DX[d];
+      if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+      if(occ[nr][nc]!==-1)continue;
+      if(visited.has(nr+','+nc))continue;
+      // Warnsdorff degree: count nr,nc's unvisited neighbours
+      let deg=0;
+      for(let dd=0;dd<4;dd++){
+        const mr=nr+DY[dd],mc=nc+DX[dd];
+        if(mr<0||mr>=rows||mc<0||mc>=cols)continue;
+        if(occ[mr][mc]!==-1)continue;
+        if(visited.has(mr+','+mc))continue;
+        deg++;
+      }
+      opts.push({r:nr,c:nc,deg});
+    }
+    if(!opts.length)break;
+    // Sort by degree ascending; tie-break with rng so different seeds
+    // produce different paths even if degrees match.
+    opts.sort((a,b)=>(a.deg-b.deg)||(rng()-.5));
+    const pick=opts[0];
+    path.push([pick.r,pick.c]);
+    visited.add(pick.r+','+pick.c);
+    curR=pick.r;curC=pick.c;
+  }
+
+  if(path.length<8)return null;
+
+  // arrow.cells convention: cells[0]=tail, cells[N-1]=head. We grew from
+  // head outward, so reverse.
+  const cells=path.reverse();
+  return {cells,dir};
 }
 
 // Build one arrow by EXHAUSTIVE candidate search.
