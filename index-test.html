@@ -65,7 +65,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js"></script>
+<script src="levels-baked.js?v=1777573934"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -209,6 +209,10 @@ const TH={
   get btnBg(){return darkMode?'rgba(255,255,255,.08)':'rgba(255,255,255,.7)'},
   get btnHover(){return darkMode?'rgba(255,255,255,.14)':'rgba(255,255,255,.95)'},
 };
+
+function arrowColor(a,i){
+  return TH.arrow;
+}
 
 // ================================================================
 //  i18n — 9 languages
@@ -660,6 +664,8 @@ function haptic(ms){try{navigator.vibrate(ms)}catch(e){}}
 function _safeJSON(k){try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}}
 let S='menu'; // menu|play|complete|levels|settings|daily|challenge
 let level=+localStorage.getItem('ae_level')||1;
+let FORCE_FRESH_LEVELS=false; // SANDBOX-ONLY: bypass levels-baked.js with ?fresh=1
+let ALLOW_DOT_FILL=false; // SANDBOX-ONLY: ?dots=1 restores 1-cell filler arrows
 // SANDBOX-ONLY: ?level=N in the URL jumps straight to that level so you can
 // preview generator changes without playing through the early levels. Also
 // unlocks all levels up to N in `maxLevel`. Doesn't persist to localStorage —
@@ -668,6 +674,8 @@ try{
   const _u=new URL(location.href);
   const _lv=parseInt(_u.searchParams.get('level'),10);
   if(_lv>0&&_lv<10000){level=_lv;}
+  FORCE_FRESH_LEVELS=_u.searchParams.get('fresh')==='1';
+  ALLOW_DOT_FILL=_u.searchParams.get('dots')==='1';
 }catch(e){}
 let stars=_safeJSON('ae_stars');
 let totalStars=Object.values(stars).reduce((a,b)=>a+b,0);
@@ -1119,7 +1127,7 @@ function generateLevel(lvl,customSeed){
   // pass customSeed and stay procedural). The pre-built layout was scored
   // and selected for tangledness during the bake, so every player sees the
   // same puzzle for the same level number.
-  if(customSeed==null&&lvl>=1&&lvl<=200&&typeof window!=='undefined'&&window.BAKED_LEVELS){
+  if(!FORCE_FRESH_LEVELS&&customSeed==null&&lvl>=1&&lvl<=200&&typeof window!=='undefined'&&window.BAKED_LEVELS){
     const baked=window.BAKED_LEVELS[lvl-1];
     if(baked){
       gridCols=baked.cols;gridRows=baked.rows;
@@ -1132,18 +1140,19 @@ function generateLevel(lvl,customSeed){
     }
   }
 
-  // Difficulty curve. Power-0.8 early ramp + cap at lvl 150 + max grid
-  // 26×34. Max arrow length raised 33 → 70 — competitor reference showed
-  // the visual "snake" feel comes from individual arrows being longer
-  // (40-80 cells) rather than from a single giant arrow blocking the
-  // grid. Plain tryBuildArrow with the strong turn bonus naturally
-  // produces winding paths up to maxLen, and they coexist with each
-  // other (each can fit because none monopolize escape lines).
+  // Difficulty curve. Power-0.8 early ramp + cap at lvl 150. The previous
+  // 26×34 grid looked sparse once 1-cell dots were removed. Competitor boards
+  // read denser on mobile: fewer cells, thicker visible strands, less blank
+  // background. Max grid is now 22×30.
+  // coexisting, not one giant Warnsdorff snake. This generator therefore
+  // rejects short "successful" paths during the main pass: if an arrow
+  // cannot grow into a proper snake, we try another head/direction instead
+  // of accepting a 2-cell scrap.
   const p=min(1,Math.pow((lvl-1)/149,.8));
-  const cols=floor(lrp(10,26,p)+.5);
-  const rows=floor(lrp(13,34,p)+.5);
+  const cols=floor(lrp(10,22,p)+.5);
+  const rows=floor(lrp(13,30,p)+.5);
   const minLen=2;
-  const maxLen=floor(lrp(15,70,p)+.5);
+  const maxLen=floor(lrp(18,74,p)+.5);
 
   gridCols=cols;gridRows=rows;
 
@@ -1153,37 +1162,265 @@ function generateLevel(lvl,customSeed){
 
   const placed=[];
 
-  // Pass 1: long arrows with turns — the main visual content. With maxLen
-  // raised to 70, each arrow can wind through 40-60 cells producing a
-  // visible snake-like coil without blocking the rest of the grid.
-  // (The Warnsdorff "primary snake" approach was tried — it produced a
-  // single 200-cell arrow but then no fillers could place because the
-  // snake winds through every row and column, blocking all escape lines.
-  // Long-but-not-monopolistic arrows from tryBuildArrow are a better fit.)
+  // Pass 1: long arrows with turns — the main visual content. We require
+  // a meaningful accepted length so the level is made from a handful of
+  // visible snakes instead of dozens of tiny leftovers.
   let safety=3000;
+  const longMin=max(8,floor(maxLen*lrp(.32,.42,p)));
   while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed);
+    const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,{minAcceptLen:longMin});
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
   }
 
-  // Pass 2: short 2-3 cell fillers for medium gaps
+  // Pass 2: medium gap snakes. These fill larger holes, but still reject
+  // 1-3 cell scraps; tiny cells are handled by absorption below.
   safety=3000;
+  const medMax=max(12,floor(maxLen*.58));
+  const medMin=max(4,floor(medMax*.26));
   while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,2,3,placed);
+    const arrow=tryBuildArrow(occ,rows,cols,rng,4,medMax,placed,{minAcceptLen:medMin,braid:false});
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
   }
 
-  // Pass 3: 1-cell arrows with valid escape lines (guaranteed solvable)
+  // Pass 3: full-coverage absorption. Goal — eliminate the "scattered
+  // single-cell dot" look the user complained about and fill empty cells
+  // in the middle of the grid.
+  //
+  // Three sub-passes, each runs in a fixpoint loop so cascading absorption
+  // fills chains of cells:
+  //   3a. TAIL extension — empty cell adjacent to an arrow's tail joins
+  //       that arrow's body (existing logic).
+  //   3b. HEAD extension along escape line — the arrow's head consumes
+  //       the cell immediately in front of it (which used to be on its
+  //       escape line). This shortens the escape but keeps it valid.
+  //   3c. 1-cell merge — leftover empty cells get a 1-cell arrow placed,
+  //       then those 1-cell arrows get merged into adjacent multi-cell
+  //       arrow tails wherever geometrically and game-logically valid.
+  //
+  // Every extension is gated by `_wouldBlockOtherEscape()` — adding a cell
+  // to arrow A's body must not put it on the escape line of any arrow B
+  // that was placed AFTER A. (B is solved before A in game order, so at
+  // B's turn A is still alive and would block B's escape.)
+
+  // Returns true iff (r,c) lies on the escape line of any arrow placed
+  // after `currentIdx`. Those arrows solve before `currentIdx` in game,
+  // so adding (r,c) to currentIdx's body would make them unreachable.
+  const _wouldBlockOtherEscape=(r,c,currentIdx)=>{
+    for(let j=currentIdx+1;j<placed.length;j++){
+      const o=placed[j];
+      const h=o.cells[o.cells.length-1];
+      if(onEscapeLine(r,c,h[0],h[1],o.dir))return true;
+    }
+    return false;
+  };
+
+  // 3a. TAIL extension into empties.
+  let absorbed=1;
+  while(absorbed>0){
+    absorbed=0;
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        if(occ[r][c]!==-1)continue;
+        for(let d=0;d<4;d++){
+          const nr=r+DY[d],nc=c+DX[d];
+          if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+          if(occ[nr][nc]===-1)continue;
+          const arrowIdx=occ[nr][nc];
+          const arrow=placed[arrowIdx];
+          const tail=arrow.cells[0];
+          if(tail[0]!==nr||tail[1]!==nc)continue;
+          const head=arrow.cells[arrow.cells.length-1];
+          if(onEscapeLine(r,c,head[0],head[1],arrow.dir))continue;
+          if(_wouldBlockOtherEscape(r,c,arrowIdx))continue;
+          arrow.cells.unshift([r,c]);
+          occ[r][c]=arrowIdx;
+          absorbed++;
+          break;
+        }
+      }
+    }
+  }
+
+  // 3b. HEAD extension along escape line. The cell directly in front of
+  // each arrow's head is empty by construction (escape line check). We
+  // pull that cell into the body, advancing the head one step toward the
+  // grid edge. New escape line is shorter by one cell but still valid.
+  let extended=1;
+  while(extended>0){
+    extended=0;
+    for(let i=0;i<placed.length;i++){
+      const a=placed[i];
+      if(a.cells.length===1)continue; // 1-cell heads are absorbed via 3c
+      const head=a.cells[a.cells.length-1];
+      const fr=head[0]+DY[a.dir],fc=head[1]+DX[a.dir];
+      if(fr<0||fr>=rows||fc<0||fc>=cols)continue; // already at edge
+      if(occ[fr][fc]!==-1)continue; // not empty (shouldn't happen)
+      if(_wouldBlockOtherEscape(fr,fc,i))continue;
+      a.cells.push([fr,fc]);
+      occ[fr][fc]=i;
+      extended++;
+    }
+  }
+
+  // 3c. Final small gap pass. We first try 3-8 cell arrows, then 2-5 cell
+  // arrows. Single-cell arrows are disabled by default in this sandbox:
+  // visually, a rare empty cell reads better than a field of tiny arrow dots.
+  // Add ?dots=1 to compare the old full-coverage behaviour.
   safety=3000;
   while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,1,1,placed);
+    const arrow=tryBuildArrow(occ,rows,cols,rng,3,8,placed,{minAcceptLen:3,braid:false});
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
+  }
+  safety=3000;
+  while(safety-->0){
+    const arrow=tryBuildArrow(occ,rows,cols,rng,2,5,placed,{minAcceptLen:2,braid:false});
+    if(!arrow)break;
+    for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
+    placed.push(arrow);
+  }
+
+  // Dense fill pass: after the main snakes are placed, keep trying modest
+  // 2-4 cell arrows until no legal gap remains. This is intentionally not
+  // "braidy"; its job is to remove empty holes without creating 1-cell dots.
+  safety=5000;
+  while(safety-->0){
+    const arrow=tryBuildArrow(occ,rows,cols,rng,2,4,placed,{minAcceptLen:2,braid:false});
+    if(!arrow)break;
+    for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
+    placed.push(arrow);
+  }
+
+  // Re-run absorption after the small gap passes. Those newly placed 2-8
+  // cell arrows create fresh tails and fresh head escape-front cells, so a
+  // second sweep can consume many cells that would otherwise become 1-cell
+  // dots.
+  absorbed=1;
+  while(absorbed>0){
+    absorbed=0;
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        if(occ[r][c]!==-1)continue;
+        for(let d=0;d<4;d++){
+          const nr=r+DY[d],nc=c+DX[d];
+          if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+          if(occ[nr][nc]===-1)continue;
+          const arrowIdx=occ[nr][nc];
+          const arrow=placed[arrowIdx];
+          const tail=arrow.cells[0];
+          if(tail[0]!==nr||tail[1]!==nc)continue;
+          const head=arrow.cells[arrow.cells.length-1];
+          if(onEscapeLine(r,c,head[0],head[1],arrow.dir))continue;
+          if(_wouldBlockOtherEscape(r,c,arrowIdx))continue;
+          arrow.cells.unshift([r,c]);
+          occ[r][c]=arrowIdx;
+          absorbed++;
+          break;
+        }
+      }
+    }
+  }
+  extended=1;
+  while(extended>0){
+    extended=0;
+    for(let i=0;i<placed.length;i++){
+      const a=placed[i];
+      if(a.cells.length===1)continue;
+      const head=a.cells[a.cells.length-1];
+      const fr=head[0]+DY[a.dir],fc=head[1]+DX[a.dir];
+      if(fr<0||fr>=rows||fc<0||fc>=cols)continue;
+      if(occ[fr][fc]!==-1)continue;
+      if(_wouldBlockOtherEscape(fr,fc,i))continue;
+      a.cells.push([fr,fc]);
+      occ[fr][fc]=i;
+      extended++;
+    }
+  }
+
+  // 3d. Internal detours. If a straight segment has two empty cells beside
+  // it, route the same arrow through those cells:
+  //   A--B becomes A--sideA--sideB--B
+  // This fills holes by making existing arrows more snake-like instead of
+  // creating separate tiny arrows.
+  let detoured=1;
+  while(detoured>0){
+    detoured=0;
+    for(let i=0;i<placed.length;i++){
+      const a=placed[i];
+      if(a.cells.length<2)continue;
+      for(let k=0;k<a.cells.length-1;k++){
+        const p0=a.cells[k],p1=a.cells[k+1];
+        const dr=p1[0]-p0[0],dc=p1[1]-p0[1];
+        const sides=(dr!==0)?[[0,1],[0,-1]]:[[1,0],[-1,0]];
+        let did=false;
+        for(const[sr,sc] of sides){
+          const r0=p0[0]+sr,c0=p0[1]+sc;
+          const r1=p1[0]+sr,c1=p1[1]+sc;
+          if(r0<0||r0>=rows||c0<0||c0>=cols)continue;
+          if(r1<0||r1>=rows||c1<0||c1>=cols)continue;
+          if(occ[r0][c0]!==-1||occ[r1][c1]!==-1)continue;
+          const head=a.cells[a.cells.length-1];
+          if(onEscapeLine(r0,c0,head[0],head[1],a.dir))continue;
+          if(onEscapeLine(r1,c1,head[0],head[1],a.dir))continue;
+          if(_wouldBlockOtherEscape(r0,c0,i)||_wouldBlockOtherEscape(r1,c1,i))continue;
+          a.cells.splice(k+1,0,[r0,c0],[r1,c1]);
+          occ[r0][c0]=i;occ[r1][c1]=i;
+          detoured++;
+          did=true;
+          break;
+        }
+        if(did)break;
+      }
+    }
+  }
+
+  if(ALLOW_DOT_FILL){
+    safety=3000;
+    while(safety-->0){
+      const arrow=tryBuildArrow(occ,rows,cols,rng,1,1,placed);
+      if(!arrow)break;
+      for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
+      placed.push(arrow);
+    }
+  }
+  let merged=1;
+  while(merged>0){
+    merged=0;
+    for(let i=placed.length-1;i>=0;i--){
+      const a=placed[i];
+      if(a.cells.length!==1)continue;
+      const ar=a.cells[0][0],ac=a.cells[0][1];
+      for(let d=0;d<4;d++){
+        const nr=ar+DY[d],nc=ac+DX[d];
+        if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+        if(occ[nr][nc]===-1)continue;
+        const otherIdx=occ[nr][nc];
+        if(otherIdx===i)continue;
+        const other=placed[otherIdx];
+        if(other.cells.length<2)continue;
+        const tail=other.cells[0];
+        if(tail[0]!==nr||tail[1]!==nc)continue;
+        const head=other.cells[other.cells.length-1];
+        if(onEscapeLine(ar,ac,head[0],head[1],other.dir))continue;
+        if(_wouldBlockOtherEscape(ar,ac,otherIdx))continue;
+        other.cells.unshift([ar,ac]);
+        occ[ar][ac]=otherIdx;
+        placed.splice(i,1);
+        // Re-index occ — every cell whose value > i decrements by 1
+        for(let r2=0;r2<rows;r2++){
+          for(let c2=0;c2<cols;c2++){
+            if(occ[r2][c2]>i)occ[r2][c2]--;
+          }
+        }
+        merged++;
+        break;
+      }
+    }
   }
 
   // Reverse so arrows[0] = first solved
@@ -1280,8 +1517,11 @@ function buildPrimaryArrow(occ,rows,cols,rng){
 // `placed` (optional) is the array of arrows already placed — used for
 // direction-variance penalty (#6: discourage clusters of same-direction
 // arrows so the puzzle isn't solvable by "tap everything pointing east").
-function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed){
+function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
+  opts=opts||{};
   const oneCell=(minLen===1&&maxLen===1);
+  const minAcceptLen=opts.minAcceptLen||minLen;
+  const braidMode=opts.braid!==false;
   const candidates=[];
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
@@ -1303,7 +1543,10 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed){
         }
         if(!clear)continue;
         // Score:
-        //   +1.5 per neighbor already occupied → tight packing (cluster grows)
+        //   +4.0 per neighbor already occupied → new arrows start attached to
+        //        existing strands instead of spawning as separate islands.
+        //   +2.0 per unique adjacent arrow → heads prefer busy knots, not just
+        //        one flat parallel side.
         //   -2.0 if neighbor arrow has the SAME escape direction (#6 direction
         //        variance — prevents "all arrows point east" clusters that the
         //        player can solve by tap-spamming in one axis)
@@ -1311,13 +1554,16 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed){
         //        the middle of the grid so the cluster has room to expand
         //        outward in all directions (prevents hollow-center effect)
         let s=rng();
+        const adjArrows=new Set();
         for(let dd=0;dd<4;dd++){
           const nr=r+DY[dd],nc=c+DX[dd];
           if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1){
-            s+=1.5;
+            s+=braidMode?4.0:1.5;
+            adjArrows.add(occ[nr][nc]);
             if(placed&&placed[occ[nr][nc]]&&placed[occ[nr][nc]].dir===d)s-=2.0;
           }
         }
+        if(braidMode)s+=adjArrows.size*2.0;
         const cR=(rows-1)/2,cC=(cols-1)/2;
         const distCenter=max(abs(r-cR),abs(c-cC));
         s-=distCenter*.12;
@@ -1370,18 +1616,32 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed){
       const useOpts=filteredOpts.length?filteredOpts:opts; // fallback only if turn impossible
       const scored=useOpts.map(({r,c,d})=>{
         let s=rng();
-        // Proximity bonus: +2.0 per occupied neighbor → paths hug existing arrows
+        // Proximity bonus: high enough that later arrows weave through existing
+        // strands instead of taking isolated open-space walks.
         let occupied=[false,false,false,false];
+        const adjArrows=new Set();
         for(let dd=0;dd<4;dd++){
           const nr=r+DY[dd],nc=c+DX[dd];
           if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1){
-            s+=2.0;
+            s+=braidMode?3.6:2.0;
             occupied[dd]=true;
+            adjArrows.add(occ[nr][nc]);
           }
         }
-        // Sandwich bonus: occupied on OPPOSITE sides → path threads a corridor
-        if(occupied[0]&&occupied[2])s+=2.5;
-        if(occupied[1]&&occupied[3])s+=2.5;
+        if(braidMode)s+=adjArrows.size*1.8;
+        // Sandwich bonus: occupied on OPPOSITE sides → path threads a corridor.
+        // This is the "braid" signal: prefer cells that sit between strands.
+        if(occupied[0]&&occupied[2])s+=braidMode?7.0:2.5;
+        if(occupied[1]&&occupied[3])s+=braidMode?7.0:2.5;
+        // Lane bonus: when moving horizontally, prefer having strands above or
+        // below; when moving vertically, prefer strands left/right. It creates
+        // long adjacent runs that read like woven ropes.
+        if(braidMode&&(d===0||d===2)&&(occupied[1]||occupied[3]))s+=3.8;
+        if(braidMode&&(d===1||d===3)&&(occupied[0]||occupied[2]))s+=3.8;
+        // After a seed arrow exists, isolated cells are visually weak. Keep a
+        // small escape hatch early in growth so the arrow can still leave a
+        // pocket and become long, but otherwise pull it back into the knot.
+        if(braidMode&&placed&&placed.length>0&&adjArrows.size===0&&cells.length>4)s-=3.0;
         // Turn bonus: dominant signal — every arrow should be twisty.
         // Was +1.6 (weaker than the +2.0 proximity bonus), so on the grid
         // edge with few neighbors arrows still grew straight. Bumped to
@@ -1406,7 +1666,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed){
     // solve it by sliding their finger. Reject and try the next candidate.
     if(cells.length>5&&turnCount<2)continue;
 
-    if(cells.length>=minLen)return{cells,dir};
+    if(cells.length>=minAcceptLen)return{cells,dir};
   }
   return null;
 }
@@ -1494,7 +1754,7 @@ function tapArrowByIndex(idx){
       arrow:a,
       dir:a.dir,
       t:0,dur:1.2,
-      col:TH.arrow,cs,gx,gy,
+      col:arrowColor(a,idx),cs,gx,gy,
       bodyLen,totalDist:bodyLen+extLen,
       path,
     });
@@ -2126,7 +2386,7 @@ function drawPlay(){
       X.restore();
     }
 
-    const col=isShaking?TH.arrowBlock:(i===hintArrow&&hintTime>0?TH.star:TH.arrow);
+    const col=isShaking?TH.arrowBlock:(i===hintArrow&&hintTime>0?TH.star:arrowColor(a,i));
     drawArrowStatic(a,cs,gx,gy,col,revealA,shakeOff);
   }
 
@@ -2938,6 +3198,65 @@ requestAnimationFrame(loop);
 if('serviceWorker' in navigator && typeof Capacitor==='undefined'){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
+window._ae={
+  generateLevel,
+  get arrows(){return arrows},
+  get gridCols(){return gridCols},
+  get gridRows(){return gridRows},
+  stats(lv){
+    if(lv)generateLevel(lv);
+    const lens=arrows.map(a=>a.cells.length).sort((a,b)=>b-a);
+    const cells=lens.reduce((a,b)=>a+b,0);
+    const owner={};
+    arrows.forEach((a,i)=>a.cells.forEach(([r,c])=>{owner[r+','+c]=i}));
+    let contacts=0;
+    arrows.forEach((a,i)=>a.cells.forEach(([r,c])=>{
+      for(let d=0;d<4;d++){
+        const j=owner[(r+DY[d])+','+(c+DX[d])];
+        if(j!=null&&j!==i)contacts++;
+      }
+    }));
+    const sim=arrows.map(a=>({cells:a.cells.map(c=>[c[0],c[1]]),dir:a.dir,alive:true}));
+    let solved=0;
+    while(solved<sim.length){
+      let idx=-1;
+      for(let i=0;i<sim.length;i++){
+        const a=sim[i];
+        if(!a.alive)continue;
+        const head=a.cells[a.cells.length-1];
+        let cr=head[0]+DY[a.dir],cc=head[1]+DX[a.dir],blocked=false;
+        while(cr>=0&&cr<gridRows&&cc>=0&&cc<gridCols&&!blocked){
+          for(let j=0;j<sim.length&&!blocked;j++){
+            if(j===i||!sim[j].alive)continue;
+            for(const[or,oc] of sim[j].cells){
+              if(or===cr&&oc===cc){blocked=true;break}
+            }
+          }
+          cr+=DY[a.dir];cc+=DX[a.dir];
+        }
+        if(!blocked){idx=i;break}
+      }
+      if(idx<0)break;
+      sim[idx].alive=false;
+      solved++;
+    }
+    return{
+      level:lv||level,
+      grid:gridCols+'x'+gridRows,
+      arrows:lens.length,
+      coverage:+(cells/(gridCols*gridRows)*100).toFixed(1),
+      one:lens.filter(x=>x===1).length,
+      two:lens.filter(x=>x===2).length,
+      lt4:lens.filter(x=>x<4).length,
+      avg:+(cells/lens.length).toFixed(1),
+      max:lens[0]||0,
+      braid:+(contacts/max(1,cells)).toFixed(2),
+      top:lens.slice(0,10),
+      solvable:solved===sim.length,
+      solved
+    };
+  }
+};
 })(); // end IIFE
 </script>
 </body>
