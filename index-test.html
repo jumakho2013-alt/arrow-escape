@@ -32,11 +32,29 @@
 *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;touch-action:none}
 html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;display:flex;justify-content:center;align-items:center;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Nunito',sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
 /* No safe-area padding — canvas extends edge-to-edge under the notch.
-   Body bg matches canvas drawBg() top color so any letterbox area (when the
-   screen aspect ratio differs from 390:844) blends with the gradient. */
-body.light{background:#faf7f1}
-body.dark{background:#15152a}
+   Body bg shows a faint dot pattern in the letterbox area on tablets /
+   landscape, so the empty space doesn't feel empty. iPhone fills the
+   viewport with canvas so the body bg isn't visible there. */
+body.light{
+  background-color:#ede7d7;
+  background-image:radial-gradient(circle,rgba(0,0,0,.05) 1px,transparent 1px);
+  background-size:22px 22px;
+}
+body.dark{
+  background-color:#0d0d1f;
+  background-image:radial-gradient(circle,rgba(255,255,255,.05) 1px,transparent 1px);
+  background-size:22px 22px;
+}
 canvas{display:block}
+/* When the screen aspect ratio differs from 390:844 (iPad in either
+   orientation, desktop browser, etc.) the canvas doesn't fill the viewport.
+   Round its corners and lift it with a soft shadow so it reads as a
+   deliberate "floating game window" instead of a cropped panel.
+   resize() toggles `body.letterboxed` based on actual fit. */
+body.letterboxed canvas{
+  border-radius:18px;
+  box-shadow:0 10px 50px rgba(0,0,0,.18);
+}
 </style>
 </head>
 <body class="light">
@@ -252,18 +270,30 @@ function _readSafeArea(){
 }
 function resize(){
   dpr=window.devicePixelRatio||1;
-  // Full-bleed: canvas always fills the entire viewport (edge-to-edge).
-  // The internal drawing surface stays 390x844 logical so game elements
-  // keep their layout, but the CSS box stretches to the device. On phones
-  // close to 390:844 ratio the stretch is imperceptible (~1-2%). Crucially,
-  // there's no visible body bg strip at top/bottom anymore — the gradient
-  // background painted by drawBg() reaches the screen edges, even under
-  // notch / status bar / nav bar. UI insets (safeTop/Bottom) are still
-  // honored in canvas-coords via the env() probe so nothing draws under
-  // system chrome. On iPad letterbox letterboxing was nice, but most users
-  // are on phones — the full-bleed look matters more.
+  // Hybrid layout. Two regimes:
+  //   1) Phones (aspect close to 390:844, ±25%): canvas fills the entire
+  //      viewport edge-to-edge — the gradient bg reaches under the notch,
+  //      no visible body strip. The slight stretch on phones with non-spec
+  //      aspect (SE, etc.) is imperceptible.
+  //   2) Tablets / desktop / strongly off-spec aspect (>25% diff): canvas
+  //      keeps the 390:844 ratio with letterbox bars on the sides. On iPad
+  //      portrait that means a centered "phone-shaped" board; on iPad
+  //      landscape the same shape sits in the middle. The letterbox area
+  //      shows the dot pattern from body bg, so the empty space reads as
+  //      a deliberate frame instead of an obvious crop.
   const winW=innerWidth||W,winH=innerHeight||H;
-  const cw=winW,ch=winH;
+  const wantRatio=W/H;
+  const winRatio=winW/winH;
+  const aspectDelta=Math.abs(winRatio-wantRatio)/wantRatio;
+  let cw,ch;
+  if(aspectDelta>.25){
+    document.body.classList.add('letterboxed');
+    if(winRatio>wantRatio){ch=winH;cw=ch*wantRatio}
+    else{cw=winW;ch=cw/wantRatio}
+  }else{
+    document.body.classList.remove('letterboxed');
+    cw=winW;ch=winH;
+  }
   C.width=W*dpr;C.height=H*dpr;
   C.style.width=cw+'px';C.style.height=ch+'px';
   X.setTransform(dpr,0,0,dpr,0,0);
