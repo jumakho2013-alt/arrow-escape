@@ -735,11 +735,6 @@ let coins=localStorage.getItem('ae_coins')!=null?(+localStorage.getItem('ae_coin
 // cells are ordered from TAIL (cells[0]) to HEAD (cells[last])
 // head escapes in the direction `dir`
 let arrows=[];
-// Track which cells have been "exposed" by departed snakes. Empty at level
-// start (so the user doesn't see how vast the grid is); each cell of an
-// arrow flying off the board joins this set, so the visible dot pattern
-// grows with progress. Reset every generateLevel().
-let _clearedCells=new Set();
 let gridCols=4,gridRows=4;
 let moves=0,minMoves=0;
 let timer=0;
@@ -1534,8 +1529,6 @@ function generateLevel(lvl,customSeed){
   // Reverse so arrows[0] = first solved
   arrows=placed.reverse();
   for(const a of arrows)a.alive=true;
-  // Fresh level → no cells exposed yet. Player only sees the live snakes.
-  _clearedCells=new Set();
 
   minMoves=arrows.length;
   moves=0;
@@ -1970,9 +1963,6 @@ function tapArrowByIndex(idx){
 
   if(canEscape(idx)){
     a.alive=false;
-    // Expose this snake's footprint on the dot grid — those cells now
-    // become visible to the player so they can see the path opening up.
-    for(const[r,c] of a.cells)_clearedCells.add(r+','+c);
     moves++;
 
     const cs=getCellSize(),gx=getGridX(),gy=getGridY();
@@ -2670,17 +2660,17 @@ function drawPlay(){
   X.scale(zoomLevel,zoomLevel);
   X.translate(-_zoomC.x,-_zoomC.y);
 
-  // Progressive dot reveal — at level start, NO dots are visible, so the
-  // player can't gauge the full grid extent. As each snake flies off, its
-  // cells join _clearedCells and dots appear there. The map "grows" with
-  // play, hiding the actual scope until the player has earned it.
+  // Dot grid background — small dots at the center of every grid cell. Stays
+  // visible after arrows clear (graph-paper aesthetic per audit + competitor
+  // reference). Drawn before arrows so live cells overlap the dot but cleared
+  // cells expose it.
   X.fillStyle=darkMode?'rgba(255,255,255,.10)':'rgba(0,0,0,.10)';
   const _dotR=max(1,cs*.06);
-  for(const key of _clearedCells){
-    const idx=key.indexOf(',');
-    const r=+key.slice(0,idx),c=+key.slice(idx+1);
-    const cx=gx+c*cs+cs/2,cy=gy+r*cs+cs/2;
-    X.beginPath();X.arc(cx,cy,_dotR,0,TAU);X.fill();
+  for(let r=0;r<gridRows;r++){
+    for(let c=0;c<gridCols;c++){
+      const cx=gx+c*cs+cs/2,cy=gy+r*cs+cs/2;
+      X.beginPath();X.arc(cx,cy,_dotR,0,TAU);X.fill();
+    }
   }
 
   // Draw all alive arrows as continuous paths through their cells
