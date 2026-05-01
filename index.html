@@ -2297,9 +2297,58 @@ function drawHeart(x,y,sz,full,broken){
   X.translate(x,y);
   const s=sz/14;
   if(s!==1)X.scale(s,s);
-  // Single closed bezier — two lobes joining at a top valley, narrowing
-  // to a point at the bottom. Coordinates are in 14-unit space so a
-  // straight `sz=14` call renders pixel-for-pixel.
+
+  // Broken heart = two halves drawn separately, each rotated outward a
+  // few degrees and meeting at a zigzag fracture line. Looks like 💔
+  // (two real pieces) instead of a whole heart with a stripe on top.
+  if(broken&&full){
+    // Left half — tilted counter-clockwise, shifted slightly left/down.
+    X.save();
+    X.translate(-0.6,0.4);
+    X.rotate(-0.11);
+    X.beginPath();
+    X.moveTo(0,10);
+    X.lineTo(-0.7,8);
+    X.lineTo(0.5,6);
+    X.lineTo(-0.7,4);
+    X.lineTo(0.5,2);
+    X.lineTo(-0.7,0);
+    X.lineTo(0,-2);
+    X.bezierCurveTo(-2,-7,-8,-7,-8,-2);
+    X.bezierCurveTo(-8,3,-4,6,0,10);
+    X.closePath();
+    X.fillStyle='#e05555';
+    X.fill();
+    // Highlight on the left lobe stays — half is still "polished".
+    X.fillStyle='rgba(255,255,255,.32)';
+    X.beginPath();
+    X.ellipse(-3.6,-3.6,1.9,1.4,-0.5,0,TAU);
+    X.fill();
+    X.restore();
+    // Right half — mirror, tilted clockwise.
+    X.save();
+    X.translate(0.6,0.4);
+    X.rotate(0.11);
+    X.beginPath();
+    X.moveTo(0,10);
+    X.lineTo(0.7,8);
+    X.lineTo(-0.5,6);
+    X.lineTo(0.7,4);
+    X.lineTo(-0.5,2);
+    X.lineTo(0.7,0);
+    X.lineTo(0,-2);
+    X.bezierCurveTo(2,-7,8,-7,8,-2);
+    X.bezierCurveTo(8,3,4,6,0,10);
+    X.closePath();
+    X.fillStyle='#d04444'; // ever-so-slightly darker so you SEE two halves
+    X.fill();
+    X.restore();
+    X.restore();
+    return;
+  }
+
+  // Whole heart: single closed bezier — two lobes joining at a top valley,
+  // narrowing to a point at the bottom. 14-unit coordinate box.
   X.beginPath();
   X.moveTo(0,-2);
   X.bezierCurveTo(-2,-7,-8,-7,-8,-2);
@@ -2310,7 +2359,6 @@ function drawHeart(x,y,sz,full,broken){
   if(full){
     X.fillStyle='#e05555';
     X.fill();
-    // Subtle highlight on the top-left lobe — the polished "candy" look.
     X.fillStyle='rgba(255,255,255,.32)';
     X.beginPath();
     X.ellipse(-3.6,-3.6,1.9,1.4,-0.5,0,TAU);
@@ -2319,21 +2367,7 @@ function drawHeart(x,y,sz,full,broken){
     X.fillStyle=darkMode?'rgba(255,255,255,.06)':'rgba(0,0,0,.05)';
     X.fill();
     X.strokeStyle=darkMode?'rgba(255,255,255,.28)':'rgba(0,0,0,.22)';
-    X.lineWidth=1.4/s; // ~1.4 screen px regardless of sz
-    X.stroke();
-  }
-  if(broken){
-    // White zigzag crack — visible on both light and dark themes.
-    X.strokeStyle='rgba(255,255,255,.7)';
-    X.lineWidth=1.6;
-    X.lineCap='round';
-    X.lineJoin='round';
-    X.beginPath();
-    X.moveTo(0,-2);
-    X.lineTo(-1.8,1);
-    X.lineTo(1.2,4);
-    X.lineTo(-1.2,7);
-    X.lineTo(1,10);
+    X.lineWidth=1.4/s;
     X.stroke();
   }
   X.restore();
