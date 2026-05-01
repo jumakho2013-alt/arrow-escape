@@ -67,7 +67,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777591604"></script>
+<script src="levels-baked.js?v=1777668664"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -227,7 +227,7 @@ const LANGS=[
 ];
 const STR={
   en:{title1:'STRAY',title2:'ARROWS',tagline:'puzzle game',play:'PLAY',levels:'LEVELS',daily:'DAILY',weekly:'WEEKLY',stats:'STATS',achievements:'ACHIEVEMENTS',settings:'SETTINGS',sound:'Sound',theme:'Theme',themeDark:'Dark',themeLight:'Light',language:'Language',watchAd:'Watch Ad',coins:'Coins',resetProgress:'Reset Progress',areYouSure:'Are you sure?',yesReset:'YES, RESET',cancel:'CANCEL',back:'BACK',hint:'HINT',skip:'SKIP',level:'LEVEL',stars:'STARS',streak:'STREAK',trophy:'TROPHY',on:'ON',off:'OFF',nextLevel:'NEXT LEVEL',replay:'REPLAY',home:'HOME',gameOver:'GAME OVER',outOfHearts:'You ran out of hearts',retry:'RETRY',continueBtn:'CONTINUE',adUnavailable:'Ad unavailable, try later',updateAvailable:'Update available',},
-  ru:{title1:'STRAY',title2:'ARROWS',tagline:'головоломка',play:'ИГРАТЬ',levels:'УРОВНИ',daily:'ДЕНЬ',weekly:'НЕДЕЛЯ',stats:'СТАТЫ',achievements:'ДОСТИЖЕНИЯ',settings:'НАСТРОЙКИ',sound:'Звук',theme:'Тема',themeDark:'Тёмная',themeLight:'Светлая',language:'Язык',watchAd:'Смотреть рекламу',coins:'монет',resetProgress:'Сбросить прогресс',areYouSure:'Вы уверены?',yesReset:'ДА, СБРОСИТЬ',cancel:'ОТМЕНА',back:'НАЗАД',hint:'ПОДСКАЗКА',skip:'ПРОПУСК',level:'УРОВ',stars:'ЗВЁЗД',streak:'СЕРИЯ',trophy:'КУБОК',on:'ВКЛ',off:'ВЫКЛ',nextLevel:'СЛЕД. УРОВЕНЬ',replay:'ЗАНОВО',home:'ДОМОЙ',gameOver:'ИГРА ОКОНЧЕНА',outOfHearts:'Закончились жизни',retry:'ПОВТОР',continueBtn:'ПРОДОЛЖИТЬ',adUnavailable:'Реклама недоступна',updateAvailable:'Доступно обновление',},
+  ru:{title1:'STRAY',title2:'ARROWS',tagline:'головоломка',play:'ИГРАТЬ',levels:'УРОВНИ',daily:'ДЕНЬ',weekly:'НЕДЕЛЯ',stats:'СТАТЫ',achievements:'ДОСТИЖЕНИЯ',settings:'НАСТРОЙКИ',sound:'Звук',theme:'Тема',themeDark:'Тёмная',themeLight:'Светлая',language:'Язык',watchAd:'Смотреть рекламу',coins:'монет',resetProgress:'Сбросить прогресс',areYouSure:'Вы уверены?',yesReset:'ДА, СБРОСИТЬ',cancel:'ОТМЕНА',back:'НАЗАД',hint:'ПОДСКАЗКА',skip:'ПРОПУСК',level:'УРОВЕНЬ',stars:'ЗВЁЗДЫ',streak:'СЕРИЯ',trophy:'КУБОК',on:'ВКЛ',off:'ВЫКЛ',nextLevel:'СЛЕД. УРОВЕНЬ',replay:'ЗАНОВО',home:'ДОМОЙ',gameOver:'ИГРА ОКОНЧЕНА',outOfHearts:'Закончились жизни',retry:'ПОВТОР',continueBtn:'ПРОДОЛЖИТЬ',adUnavailable:'Реклама недоступна',updateAvailable:'Доступно обновление',},
   es:{title1:'STRAY',title2:'ARROWS',tagline:'juego de puzzle',play:'JUGAR',levels:'NIVELES',daily:'DIARIO',weekly:'SEMANAL',stats:'STATS',achievements:'LOGROS',settings:'AJUSTES',sound:'Sonido',theme:'Tema',themeDark:'Oscuro',themeLight:'Claro',language:'Idioma',watchAd:'Ver anuncio',coins:'monedas',resetProgress:'Reiniciar',areYouSure:'¿Estás seguro?',yesReset:'SÍ, REINICIAR',cancel:'CANCELAR',back:'ATRÁS',hint:'PISTA',skip:'SALTAR',level:'NIVEL',stars:'ESTR',streak:'RACHA',trophy:'COPA',on:'ON',off:'OFF',nextLevel:'SIGUIENTE',replay:'REPETIR',home:'INICIO',gameOver:'FIN',outOfHearts:'Sin vidas',retry:'REINTENTAR',continueBtn:'CONTINUAR',adUnavailable:'Anuncio no disponible',updateAvailable:'Actualización disponible',},
   de:{title1:'STRAY',title2:'ARROWS',tagline:'Puzzlespiel',play:'SPIELEN',levels:'LEVEL',daily:'TAG',weekly:'WOCHE',stats:'STATS',achievements:'ERFOLGE',settings:'EINSTELL.',sound:'Ton',theme:'Theme',themeDark:'Dunkel',themeLight:'Hell',language:'Sprache',watchAd:'Werbung ansehen',coins:'Münzen',resetProgress:'Zurücksetzen',areYouSure:'Sicher?',yesReset:'JA, RESET',cancel:'ABBR.',back:'ZURÜCK',hint:'TIPP',skip:'ÜBERSPR.',level:'LVL',stars:'STERNE',streak:'SERIE',trophy:'POKAL',on:'AN',off:'AUS',nextLevel:'WEITER',replay:'NEU',home:'HOME',gameOver:'GAME OVER',outOfHearts:'Keine Herzen mehr',retry:'NEU',continueBtn:'WEITER',adUnavailable:'Werbung nicht verfügbar',updateAvailable:'Update verfügbar',},
   fr:{title1:'STRAY',title2:'ARROWS',tagline:'jeu de puzzle',play:'JOUER',levels:'NIVEAUX',daily:'JOUR',weekly:'SEMAINE',stats:'STATS',achievements:'SUCCÈS',settings:'PARAM.',sound:'Son',theme:'Thème',themeDark:'Sombre',themeLight:'Clair',language:'Langue',watchAd:'Voir pub',coins:'pièces',resetProgress:'Réinitialiser',areYouSure:'Sûr ?',yesReset:'OUI, RESET',cancel:'ANNULER',back:'RETOUR',hint:'INDICE',skip:'PASSER',level:'NIV',stars:'ÉTOILES',streak:'SÉRIE',trophy:'COUPE',on:'ON',off:'OFF',nextLevel:'SUIVANT',replay:'REJOUER',home:'ACCUEIL',gameOver:'PERDU',outOfHearts:'Plus de vies',retry:'REJOUER',continueBtn:'CONTINUER',adUnavailable:'Pub indisponible',updateAvailable:'Mise à jour dispo',},
@@ -479,10 +479,14 @@ let _pinchStartMid=null;   // {x,y} screen-coord midpoint at gesture start
 let _pinchStartWorld=null; // {x,y} world-coord point under that midpoint
 let _pinchStartPan=null;   // {x,y} pan at gesture start
 
-// 1-finger tap tracking — single-finger drag does NOT pan. Pan is 2-finger
-// only (per user feedback: 1-finger drag was hitting arrow tap detection).
-// Tap fires on touchend, only if total movement < TAP_THRESHOLD.
+// 1-finger tap tracking. Tap fires on touchend if total movement stays
+// within TAP_THRESHOLD. If movement exceeds threshold AND zoom is engaged
+// (>1), the gesture promotes to a 1-finger pan via _onePanLast — the user
+// can grab anywhere (arrow OR empty cell) and drag to scroll, exactly
+// like Maps. At zoom=1 we keep the original "drag cancels tap" rule so
+// a swipe never accidentally activates an arrow under the start point.
 let _tapStart=null;        // {x,y,t} when 1-finger touch begins
+let _onePanLast=null;      // {x,y} previous touchmove position during 1-finger pan
 const TAP_THRESHOLD=10;    // px — drag beyond this cancels the tap
 
 // Pivot for zoom is the GRID's geometric center, not the screen's. The grid
@@ -627,12 +631,30 @@ C.addEventListener('touchmove',e=>{
     _clampPan();
     return;
   }
-  // 1-finger move — track total movement so we can cancel the pending tap
-  // if it turns into a swipe. NO pan on 1 finger.
+  // 1-finger move. When zoom is in (>1) and the finger has moved past
+  // the tap threshold, treat further motion as a one-finger pan — natural
+  // map-app behaviour the user requested. While zoom=1 there's nothing to
+  // pan, so we keep the original "drag cancels tap" semantics so a swipe
+  // never accidentally fires an arrow tap under the start point.
   const p=gp(e);
   if(_tapStart){
     const dx=p.x-_tapStart.x,dy=p.y-_tapStart.y;
-    if(Math.hypot(dx,dy)>TAP_THRESHOLD)_tapStart=null;
+    if(Math.hypot(dx,dy)>TAP_THRESHOLD){
+      _tapStart=null;
+      if(zoomLevel>1.001){
+        // Promote to a 1-finger pan. _onePanLast keeps the previous
+        // touchmove position so we can apply incremental deltas; without
+        // it the canvas would jump by the full from-touchstart delta on
+        // the first move and feel jittery.
+        _onePanLast={x:p.x,y:p.y};
+      }
+    }
+  }else if(_onePanLast){
+    // Active 1-finger pan — apply delta from previous position.
+    panX+=p.x-_onePanLast.x;
+    panY+=p.y-_onePanLast.y;
+    _onePanLast={x:p.x,y:p.y};
+    _clampPan();
   }
   mx=p.x;my=p.y;
 },{passive:false});
@@ -655,12 +677,12 @@ C.addEventListener('touchend',e=>{
     // to a tap or pan — user has to lift fully and tap fresh.
     _pinchStartDist=0;_pinchStartMid=null;_pinchStartWorld=null;
   }
-  if(e.touches.length===0)_tapStart=null;
+  if(e.touches.length===0){_tapStart=null;_onePanLast=null;}
 });
 
 C.addEventListener('touchcancel',()=>{
   // Phone call interrupt, gesture timeout, etc — drop everything cleanly.
-  _pinchStartDist=0;_pinchStartMid=null;_pinchStartWorld=null;_tapStart=null;
+  _pinchStartDist=0;_pinchStartMid=null;_pinchStartWorld=null;_tapStart=null;_onePanLast=null;
 });
 
 function haptic(ms){try{navigator.vibrate(ms)}catch(e){}}
@@ -1389,11 +1411,22 @@ function generateLevel(lvl,customSeed){
   // This fills holes by making existing arrows more snake-like instead of
   // creating separate tiny arrows.
   let detoured=1;
+  // Per-arrow detour budget: cap at ~half the original segments. The
+  // earlier "detour everything possible" pass turned every long arrow
+  // into a zigzag clew that couldn't visibly INTERACT with neighbour
+  // arrows — chains broke down because each snake was busy folding into
+  // itself. Halving the detours leaves more straight runs, which then
+  // get scored higher as they cross OTHER arrows' escape lines.
+  const _detourBudget=new Array(placed.length);
+  for(let i=0;i<placed.length;i++){
+    _detourBudget[i]=Math.max(0, Math.floor((placed[i].cells.length-1)*0.5));
+  }
   while(detoured>0){
     detoured=0;
     for(let i=0;i<placed.length;i++){
       const a=placed[i];
       if(a.cells.length<2)continue;
+      if(_detourBudget[i]<=0)continue;
       // BUG FIX: detour cannot touch the LAST segment (k = cells.length-2).
       // The last segment cells[N-2]→cells[N-1] must be in arrow.dir so the
       // arrowhead glyph (which is tangent to the last segment) points the
@@ -1401,6 +1434,10 @@ function generateLevel(lvl,customSeed){
       // segment routes the path sideways and breaks that invariant — the
       // player taps an arrow that visually points UP and it flies LEFT.
       for(let k=0;k<a.cells.length-2;k++){
+        // Skip ~35% of segments randomly. Reduces internal zigzag density
+        // by roughly 25-30% — straighter runs, more visual room for
+        // chain interactions between separate arrows.
+        if(rng()<0.35)continue;
         const p0=a.cells[k],p1=a.cells[k+1];
         const dr=p1[0]-p0[0],dc=p1[1]-p0[1];
         const sides=(dr!==0)?[[0,1],[0,-1]]:[[1,0],[-1,0]];
@@ -1418,6 +1455,7 @@ function generateLevel(lvl,customSeed){
           a.cells.splice(k+1,0,[r0,c0],[r1,c1]);
           occ[r0][c0]=i;occ[r1][c1]=i;
           detoured++;
+          _detourBudget[i]--;
           did=true;
           break;
         }
@@ -1619,7 +1657,10 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         // Variant D — chain mode bonus: prefer heads with LONG escape lines.
         // Each cell on the line is potential blocker once a later arrow's
         // body lands there, which creates a dependency chain at game time.
-        if(CHAIN_MODE)s+=escLen*.5;
+        // Weight bumped 0.5 → 1.5 (v1.0.15 tuning): heads with the longest
+        // exit corridor are now strongly preferred, so subsequent arrows
+        // routinely have something meaningful to BLOCK.
+        if(CHAIN_MODE)s+=escLen*1.5;
         // Variant E — clusters mode penalty: arrow heads far from any
         // cluster center get strongly docked, so heads gather around the
         // chosen island centers and leave empty corridors between them.
@@ -1726,7 +1767,13 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
             const oh=o.cells[o.cells.length-1];
             if(onEscapeLine(r,c,oh[0],oh[1],o.dir))crossings++;
           }
-          s+=crossings*2.5;
+          // Weight bumped 2.5 → 8 (v1.0.15 tuning). Crossing another
+          // arrow's escape line is the single most-important property
+          // for puzzle quality — every crossing translates to "tap A
+          // before B" gameplay. With the previous 2.5 the bonus was
+          // routinely outweighed by length / turn / center bonuses, so
+          // arrows preferred isolated zigzag spirals to chain links.
+          s+=crossings*8;
         }
         // Variant E — clusters mode: penalty for body cells far from nearest
         // cluster center, keeping the arrow inside its assigned island.
@@ -2311,13 +2358,13 @@ function drawMenu(){
   X.strokeStyle=TH.border;X.lineWidth=1;
   X.beginPath();X.roundRect(W/2-spW/2,spY-spH/2,spW,spH,14);X.stroke();
   const col1=W/2-spW/2+spW*.125,col2=W/2-spW/2+spW*.375,col3=W/2-spW/2+spW*.625,col4=W/2-spW/2+spW*.875;
-  txtP(t('level'),col1,spY-13,9,TH.textSec);
+  txtP(t('level'),col1,spY-13,8,TH.textSec);
   txtP(maxLevel+'',col1,spY+9,17,TH.text);
-  txtP(t('stars'),col2,spY-13,9,TH.textSec);
+  txtP(t('stars'),col2,spY-13,8,TH.textSec);
   txtP(totalStars+'',col2,spY+9,17,TH.star);
-  txtP(t('streak'),col3,spY-13,9,TH.textSec);
+  txtP(t('streak'),col3,spY-13,8,TH.textSec);
   txtP(streakDays+'d',col3,spY+9,17,TH.warning);
-  txtP(t('trophy'),col4,spY-13,9,TH.textSec);
+  txtP(t('trophy'),col4,spY-13,8,TH.textSec);
   txtP(achUnlockedCount()+'/'+ACHIEVEMENTS.length,col4,spY+9,13,TH.accent);
 
   // PLAY button — text only, no play-icon (it broke the visual style)
@@ -2546,10 +2593,13 @@ function drawPlay(){
       X.closePath();X.fill();
       X.globalAlpha=1;
 
-      // Text — only at start of level so it doesn't keep nagging
+      // Text — only at start of level so it doesn't keep nagging.
+      // Positioned BELOW the stars row (which sits at TOP_Y+22) so the
+      // hint copy doesn't collide with the level title or stars on
+      // tutorial levels — bug visible on level 1/2 in v1.0.14.
       if(moves===0){
-        txt('Tap this arrow',W/2,76,14,TH.star,'center','700');
-        txt('It has a clear path to the edge',W/2,94,11,darkMode?'#aaa':'#666');
+        txt('Tap this arrow',W/2,TOP_Y+44,14,TH.star,'center','700');
+        txt('It has a clear path to the edge',W/2,TOP_Y+62,11,darkMode?'#aaa':'#666');
       }
     }
   }
