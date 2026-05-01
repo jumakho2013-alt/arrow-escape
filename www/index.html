@@ -67,7 +67,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777676297"></script>
+<script src="levels-baked.js?v=1777676966"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1212,20 +1212,25 @@ function generateLevel(lvl,customSeed){
   gridCols=cols;gridRows=rows;
 
   // Late-level scaling: once `p` saturates at lvl 75 the grid + length
-  // are maxed out. Difficulty keeps growing via cluster density (more
-  // islands → more spatial constraints). Smooth ramp lvl 75 → 1500,
-  // then stepped +1 cluster every 50 levels past 1500.
-  // _maxBlockers stays at 1 — bumping it caused 50%+ seeds to deadlock
-  // (chain cycles rejected by solvability check).
+  // are maxed out. Difficulty keeps climbing via TWO levers:
+  //   • numClusters: 3 → 12 over lvls 75..1500, then +1 every 25 lvls
+  //     (more cluster centers = more islands competing for the same
+  //     snake heads = tighter corridors between them)
+  //   • lateExtra: 0..1 over the same range — used below to scale
+  //     longMin DOWN at high levels (shorter required min length =
+  //     more arrows per board = more to track per tap)
   _maxBlockers=1;
-  let numClusters;
+  let numClusters, lateExtra;
   if(lvl<=1500){
-    const q=Math.max(0,(lvl-75)/1425); // 0..1 over lvls 75..1500
-    numClusters=floor(lrp(3,8,q)+.5);
+    const q=Math.max(0,(lvl-75)/1425);
+    numClusters=floor(lrp(3,12,q)+.5);
+    lateExtra=q;
   }else{
-    numClusters=8+floor((lvl-1500)/50); // +1 per 50 lvls after 1500
+    numClusters=12+floor((lvl-1500)/25);
+    lateExtra=1+(lvl-1500)/2000;
   }
-  numClusters=Math.min(20,numClusters);
+  numClusters=Math.min(24,numClusters);
+  lateExtra=Math.min(2.5,lateExtra);
 
   // Variant E — pick cluster centers; scoring penalises cells far from
   // the nearest one so arrows form separate islands. _clusterCenters is
@@ -1245,25 +1250,18 @@ function generateLevel(lvl,customSeed){
 
   const placed=[];
 
-  // Pass 1: long arrows with turns — the main visual content. We require
-  // a meaningful accepted length so the level is made from a handful of
-  // visible snakes instead of dozens of tiny leftovers.
+  // ONE-PASS GENERATION: drop the old medium-gap pass — it was
+  // visual noise between headline snakes. Each placed arrow is now a
+  // substantial winding path the player can read end-to-end. Empty
+  // cells get absorbed into snakes by Pass 3 below.
+  // longMin shrinks at very late levels (lateExtra > 0) — gives MORE
+  // arrows per board at lvl 1500+ so there's more to track even
+  // though the grid stays maxed.
   let safety=3000;
-  const longMin=max(8,floor(maxLen*lrp(.32,.42,p)));
+  const longMinBase=floor(maxLen*lrp(.55,.70,p));
+  const longMin=max(15,floor(longMinBase*max(0.45,1-lateExtra*0.30)));
   while(safety-->0){
     const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,{minAcceptLen:longMin});
-    if(!arrow)break;
-    for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
-    placed.push(arrow);
-  }
-
-  // Pass 2: medium gap snakes. These fill larger holes, but still reject
-  // 1-3 cell scraps; tiny cells are handled by absorption below.
-  safety=3000;
-  const medMax=max(12,floor(maxLen*.58));
-  const medMin=max(4,floor(medMax*.26));
-  while(safety-->0){
-    const arrow=tryBuildArrow(occ,rows,cols,rng,4,medMax,placed,{minAcceptLen:medMin,braid:false});
     if(!arrow)break;
     for(const[r,c] of arrow.cells)occ[r][c]=placed.length;
     placed.push(arrow);
