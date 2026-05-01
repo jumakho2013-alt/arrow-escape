@@ -2579,7 +2579,7 @@ function drawMenu(){
   }
   // Row 2
   const weeklyDone=isWeeklyDone();
-  if(drawBtn(weeklyDone?t('weekly')+' ★':t('weekly'),gX-bW/2-bGapX/2,gY2,bW,bH)){
+  if(drawBtn(weeklyDone?t('weekly')+' ★':t('weekly'),gX-bW/2-bGapX/2,gY2,bW,bH,TH.warning)){
     goto('play',()=>{isWeekly=true;isDaily=false;const ws=getWeeklySeed();generateLevel(120,ws*131+71)});
     // Weekly difficulty pinned at level 120 (hard) — bigger reward + bigger maze
   }
