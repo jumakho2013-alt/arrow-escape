@@ -67,7 +67,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777673141"></script>
+<script src="levels-baked.js?v=1777673782"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1199,10 +1199,14 @@ function generateLevel(lvl,customSeed){
   // less normal now, just a touch harder per step" so we bring the max
   // grid (22×30) closer in by ~20%.
   const p=min(1,Math.pow((lvl-1)/74,.66));
-  const cols=floor(lrp(10,22,p)+.5);
-  const rows=floor(lrp(13,30,p)+.5);
+  // Grid 1.5× finer per user feedback: arrows need more cells to weave
+  // INTO each other's pockets. Was 10×13 → 22×30; now 14×19 → 32×42.
+  // Each cell on screen is ~33% smaller, so snakes look denser without
+  // the arrow-stroke disappearing.
+  const cols=floor(lrp(14,32,p)+.5);
+  const rows=floor(lrp(19,42,p)+.5);
   const minLen=2;
-  const maxLen=floor(lrp(18,74,p)+.5);
+  const maxLen=floor(lrp(25,108,p)+.5);
 
   gridCols=cols;gridRows=rows;
 
@@ -1512,19 +1516,14 @@ function generateLevel(lvl,customSeed){
   // Solvability check: simulate "tap an arrow whose escape is clear" until
   // all are removed. If we get stuck, the seed produced a deadlock (cycle
   // in the chain dependency graph) — retry with a different seed.
-  if(!_isLevelSolvable(placed,rows,cols)){
-    if(customSeed==null&&lvl>=1){
-      // Retry with a perturbed seed up to 5 times. Almost always succeeds
-      // by the second attempt; rare seeds fall through to a fresh
-      // procedural pass without chain dependencies.
-      const _retryDepth=arguments.length>=3?arguments[2]:0;
-      if(_retryDepth<5){
-        return generateLevel(lvl,(customSeed!=null?customSeed:(lvl*7919+31337))+97*(_retryDepth+1),_retryDepth+1);
-      }
-    }
-    // Out of retries: fall through and let the player play it. The
-    // skip button still works, and most seeds reach this state with
-    // only 1-2 chained arrows (still navigable in practice).
+  // BUG FIX: previously this retry only ran when customSeed==null, but
+  // the recursive call ALWAYS passes a customSeed for the perturbed
+  // seed — so it never recursed past depth 1. Track depth in arguments[2]
+  // independent of customSeed so we get the full 5 retries we intended.
+  const _retryDepth=arguments.length>=3?arguments[2]:0;
+  if(!_isLevelSolvable(placed,rows,cols)&&_retryDepth<5&&lvl>=1){
+    const baseSeed=customSeed!=null?customSeed:(lvl*7919+31337);
+    return generateLevel(lvl,baseSeed+97*(_retryDepth+1),_retryDepth+1);
   }
 
   // Reverse so arrows[0] = first solved
