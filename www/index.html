@@ -418,17 +418,25 @@ async function checkForUpdate(){
   // Only iOS — Android has no equivalent simple endpoint
   if(typeof Capacitor!=='undefined'&&Capacitor.getPlatform&&Capacitor.getPlatform()==='android')return;
   // 24h cache so we don't hammer iTunes on every launch
+  const myVersion=APP_VERSION.replace(/^v/,'');
   const lastCheck=+localStorage.getItem('ae_update_check')||0;
   if(Date.now()-lastCheck<24*3600*1000){
     const cached=localStorage.getItem('ae_update_avail');
-    if(cached)availableUpdate=cached;
+    // Bug fix: previously loaded cached value blindly. After the user
+    // upgrades to the cached version, the banner kept showing because
+    // we never re-compared. Only honor the cache if it's STRICTLY newer
+    // than the running build; otherwise clear it.
+    if(cached&&_semverGt(cached,myVersion)){
+      availableUpdate=cached;
+    }else if(cached){
+      try{localStorage.removeItem('ae_update_avail')}catch(e){}
+    }
     return;
   }
   try{
     const r=await fetch('https://itunes.apple.com/lookup?bundleId=strayarrows.puzzle');
     const data=await r.json();
     const storeVersion=data.results&&data.results[0]&&data.results[0].version;
-    const myVersion=APP_VERSION.replace(/^v/,'');
     if(storeVersion&&_semverGt(storeVersion,myVersion)){
       availableUpdate=storeVersion;
       try{localStorage.setItem('ae_update_avail',storeVersion)}catch(e){}
