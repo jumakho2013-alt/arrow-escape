@@ -16,8 +16,11 @@ android/keystore.properties
 # macOS metadata
 .DS_Store
 
-# Claude Code transient state
+# Claude Code transient state — keep launch.json tracked, ignore everything else
 .claude/scheduled_tasks.lock
+.claude/worktrees/
+.claude/sessions/
+.claude/state/
 
 # iOS build artifacts (xcodebuild creates these in DerivedData by default,
 # but log bundles can land in the project dir)
