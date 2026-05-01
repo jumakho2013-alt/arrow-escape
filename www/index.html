@@ -2322,21 +2322,20 @@ function drawBtn(label,x,y,w,h,color){
   const sc=btnPressScale(x,y,w,h);
   const dw=w*sc,dh=h*sc;
   const r=dh/2;
-  // Color-aware design system: when caller passes a color (TH.success,
-  // TH.warning, TH.star, TH.accent...) the button shows a subtle tint
-  // matching drawBigBtn's tokens — lighter weight for "secondary action".
-  // Without color → neutral gray. Earlier build only used color on hover,
-  // so on touch devices coloured buttons looked identical to gray ones.
-  if(color){
-    X.fillStyle=hv?color+'25':color+'12';
-    X.strokeStyle=color+'45';X.lineWidth=1.5;
-  }else{
-    X.fillStyle=hv?TH.btnHover:TH.btnBg;
-    X.strokeStyle=hv?TH.accent+'60':TH.border;X.lineWidth=hv?1.5:1;
-  }
+  // Unified pill design — every button looks like the PLAY button (drawBigBtn).
+  // Per product decision: warm accent tint + accent stroke, no separate
+  // "neutral" variant. Coloured callers (TH.warning for reset, TH.star for
+  // ad reward) still pass through and show their own colour. Defaults to
+  // TH.accent so secondary buttons (LEVELS, DAILY, WEEKLY, STATS, settings
+  // rows, back buttons) all read as one consistent design language.
+  const c=color||TH.accent;
+  X.fillStyle=hv?c+'30':c+'18';
+  X.strokeStyle=c+'50';X.lineWidth=1.5;
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.fill();
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.stroke();
-  txt(label,x,y,floor(h*.38),color?TH.text:(hv?TH.btnText:TH.btnTextSec));
+  // Label always full-contrast btnText; touch devices have no hover so a
+  // dimmed default state would make every label look permanently grey.
+  txt(label,x,y,floor(h*.38),TH.btnText);
   if(!blocked&&tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();tapped=false;return true}
   return false;
 }
