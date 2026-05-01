@@ -67,7 +67,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777671652"></script>
+<script src="levels-baked.js?v=1777672095"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1646,7 +1646,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         for(let dd=0;dd<4;dd++){
           const nr=r+DY[dd],nc=c+DX[dd];
           if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1){
-            s+=braidMode?4.0:1.5;
+            s+=braidMode?7.0:3.5;
             adjArrows.add(occ[nr][nc]);
             if(placed&&placed[occ[nr][nc]]&&placed[occ[nr][nc]].dir===d)s-=2.0;
           }
@@ -1661,7 +1661,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         // Weight bumped 0.5 → 1.5 (v1.0.15 tuning): heads with the longest
         // exit corridor are now strongly preferred, so subsequent arrows
         // routinely have something meaningful to BLOCK.
-        if(CHAIN_MODE)s+=escLen*1.5;
+        if(CHAIN_MODE)s+=escLen*4;
         // Variant E — clusters mode penalty: arrow heads far from any
         // cluster center get strongly docked, so heads gather around the
         // chosen island centers and leave empty corridors between them.
@@ -1729,7 +1729,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         for(let dd=0;dd<4;dd++){
           const nr=r+DY[dd],nc=c+DX[dd];
           if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1){
-            s+=braidMode?3.6:2.0;
+            s+=braidMode?6.0:4.0;
             occupied[dd]=true;
             adjArrows.add(occ[nr][nc]);
           }
@@ -1774,7 +1774,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
           // before B" gameplay. With the previous 2.5 the bonus was
           // routinely outweighed by length / turn / center bonuses, so
           // arrows preferred isolated zigzag spirals to chain links.
-          s+=crossings*8;
+          s+=crossings*20;
         }
         // Variant E — clusters mode: penalty for body cells far from nearest
         // cluster center, keeping the arrow inside its assigned island.
