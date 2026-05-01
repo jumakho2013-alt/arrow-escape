@@ -2329,26 +2329,23 @@ function _renderGlass(w,h,r,dark){
 function _inputBlocked(){return langPickerOpen}
 
 function drawBtn(label,x,y,w,h,color){
+  // Same visual language as drawBigBtn ("PLAY" button) per user request:
+  // every button is a tinted pill with a coloured border and bold full-
+  // contrast text. Difference vs drawBigBtn is only the smaller font
+  // (h × 0.38 vs h × 0.40) appropriate for secondary buttons.
+  // Default colour = TH.accent so buttons that don't pass one still look
+  // like PLAY rather than washed-out gray.
   const blocked=_inputBlocked();
   const hv=!blocked&&abs(mx-x)<w/2&&abs(my-y)<h/2;
   const sc=btnPressScale(x,y,w,h);
   const dw=w*sc,dh=h*sc;
   const r=dh/2;
-  // Color-aware design system: when caller passes a color (TH.success,
-  // TH.warning, TH.star, TH.accent...) the button shows a subtle tint
-  // matching drawBigBtn's tokens — lighter weight for "secondary action".
-  // Without color → neutral gray. Earlier build only used color on hover,
-  // so on touch devices coloured buttons looked identical to gray ones.
-  if(color){
-    X.fillStyle=hv?color+'25':color+'12';
-    X.strokeStyle=color+'45';X.lineWidth=1.5;
-  }else{
-    X.fillStyle=hv?TH.btnHover:TH.btnBg;
-    X.strokeStyle=hv?TH.accent+'60':TH.border;X.lineWidth=hv?1.5:1;
-  }
+  const c=color||TH.accent;
+  X.fillStyle=hv?c+'30':c+'18';
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.fill();
+  X.strokeStyle=c+'50';X.lineWidth=1.5;
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.stroke();
-  txt(label,x,y,floor(h*.38),color?TH.text:(hv?TH.btnText:TH.btnTextSec));
+  txt(label,x,y,floor(h*.38),TH.btnText);
   if(!blocked&&tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();tapped=false;return true}
   return false;
 }
