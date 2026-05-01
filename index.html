@@ -3269,7 +3269,7 @@ function drawSettings(){
     darkMode=!darkMode;_safeSet('ae_theme',darkMode?'dark':'light');applyTheme();
   }
   // Watch Ad for Coins
-  if(drawBtn(t('watchAd')+' → +'+AD_COIN_REWARD+' '+t('coins'),W/2,295,260,44,TH.star)){
+  if(drawBtn(t('watchAd')+' +'+AD_COIN_REWARD+' '+t('coins'),W/2,295,260,44,TH.star)){
     showRewardedAd(()=>{coins+=AD_COIN_REWARD;totalCoinsEarned+=AD_COIN_REWARD;save();spawnFloater(W/2,295,'+'+AD_COIN_REWARD)});
   }
 
