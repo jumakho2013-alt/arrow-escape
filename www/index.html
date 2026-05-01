@@ -67,7 +67,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777672841"></script>
+<script src="levels-baked.js?v=1777673141"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1672,7 +1672,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
           if(nr>=0&&nr<rows&&nc>=0&&nc<cols&&occ[nr][nc]!==-1){
             s+=braidMode?7.0:3.5;
             adjArrows.add(occ[nr][nc]);
-            if(placed&&placed[occ[nr][nc]]&&placed[occ[nr][nc]].dir===d)s-=2.0;
+            if(placed&&placed[occ[nr][nc]]&&placed[occ[nr][nc]].dir===d)s-=8.0;
           }
         }
         if(braidMode)s+=adjArrows.size*2.0;
@@ -1686,6 +1686,21 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         // exit corridor are now strongly preferred, so subsequent arrows
         // routinely have something meaningful to BLOCK.
         if(CHAIN_MODE)s+=escLen*4;
+        // Direction-variance bonus: the level should have a healthy
+        // mix of all four exit directions, otherwise the player can
+        // spam-tap one column. Reward under-represented directions,
+        // penalise the currently-most-common one.
+        if(placed&&placed.length>3){
+          const dirCounts=[0,0,0,0];
+          for(const o of placed)dirCounts[o.dir]++;
+          let minC=dirCounts[0],maxC=dirCounts[0];
+          for(let dd=1;dd<4;dd++){
+            if(dirCounts[dd]<minC)minC=dirCounts[dd];
+            if(dirCounts[dd]>maxC)maxC=dirCounts[dd];
+          }
+          if(dirCounts[d]===minC&&maxC>minC)s+=7;
+          else if(dirCounts[d]===maxC&&maxC>minC+1)s-=5;
+        }
         // Variant E — clusters mode penalty: arrow heads far from any
         // cluster center get strongly docked, so heads gather around the
         // chosen island centers and leave empty corridors between them.
