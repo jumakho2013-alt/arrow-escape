@@ -67,7 +67,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777673782"></script>
+<script src="levels-baked.js?v=1777674231"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1790,11 +1790,11 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         // Was +1.6 (weaker than the +2.0 proximity bonus), so on the grid
         // edge with few neighbors arrows still grew straight. Bumped to
         // +3.0 so even an isolated arrow strongly prefers turning.
-        if(d!==lastStepDir)s+=3.0;
+        if(d!==lastStepDir)s+=2.0;
         // Straight penalty: was -1.2, weak vs RNG noise. Now -3.5 — combined
         // with the hard cap above, straight runs of 3+ are statistically
         // rare and never hit the wall-hugging "tap outer ring" exploit.
-        else if(straightRun>=2)s-=3.5;
+        else if(straightRun>=2)s-=2.0;
         // Variant D — chain mode: STRONG bonus if this cell is on the escape
         // line of an already-placed arrow. That arrow solves AFTER this one
         // in game order; placing our body on its escape line means the player
@@ -2176,14 +2176,26 @@ function drawArrowPolyline(pts,sz,col,alpha){
   const k=min(1,headL/hlen);
   modPts[modPts.length-1]=[last[0]-nx*hlen*k,last[1]-ny*hlen*k];
 
-  // Line body: thick, rounded caps and joins for smooth maze-like paths
+  // Line body: thick stroke with ARC'd corners. lineJoin='round' alone
+  // only gives a tiny radius (≈ stroke width / 2) so 90° turns still
+  // read as sharp. arcTo at every interior vertex replaces each corner
+  // with a real curve of `cornerR` radius — the path reads like a
+  // soft pipe winding through cells, not a stair-step.
   X.strokeStyle=col;
   X.lineWidth=thick;
   X.lineCap='round';
   X.lineJoin='round';
+  const cornerR=sz*0.35;
   X.beginPath();
   X.moveTo(modPts[0][0],modPts[0][1]);
-  for(let i=1;i<modPts.length;i++)X.lineTo(modPts[i][0],modPts[i][1]);
+  if(modPts.length<3){
+    for(let i=1;i<modPts.length;i++)X.lineTo(modPts[i][0],modPts[i][1]);
+  }else{
+    for(let i=1;i<modPts.length-1;i++){
+      X.arcTo(modPts[i][0],modPts[i][1],modPts[i+1][0],modPts[i+1][1],cornerR);
+    }
+    X.lineTo(modPts[modPts.length-1][0],modPts[modPts.length-1][1]);
+  }
   X.stroke();
 
   // Triangular arrowhead at the head (tip at `last`, base extending backward)
