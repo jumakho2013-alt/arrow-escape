@@ -12,3 +12,19 @@ ios/App/build/
 # Android signing config — passwords live here, never in build.gradle.
 # Use android/keystore.properties.example as a template for setup.
 android/keystore.properties
+
+# macOS metadata
+.DS_Store
+
+# Claude Code transient state
+.claude/scheduled_tasks.lock
+
+# iOS build artifacts (xcodebuild creates these in DerivedData by default,
+# but log bundles can land in the project dir)
+*.xcresult
+ios/App/build/
+ios/App/DerivedData/
+
+# Xcode user data (per-user state, not needed in repo)
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
