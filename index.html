@@ -203,8 +203,8 @@ const TH={
   get cardBg(){return darkMode?'rgba(255,255,255,.05)':'rgba(0,0,0,.03)'},
   // Buttons: lifted surface above bg (slightly lighter in dark, slightly
   // darker in light) — gives a soft "card" feel without any glass overlay.
-  get btnBg(){return darkMode?'rgba(255,255,255,.12)':'rgba(255,255,255,.95)'},
-  get btnHover(){return darkMode?'rgba(255,255,255,.2)':'rgba(255,255,255,1)'},
+  get btnBg(){return darkMode?'rgba(255,255,255,.08)':'rgba(255,255,255,.7)'},
+  get btnHover(){return darkMode?'rgba(255,255,255,.14)':'rgba(255,255,255,.95)'},
 };
 
 function arrowColor(a,i){
@@ -2238,25 +2238,18 @@ function drawBtn(label,x,y,w,h,color){
   // Color-aware design system: when caller passes a color (TH.success,
   // TH.warning, TH.star, TH.accent...) the button shows a subtle tint
   // matching drawBigBtn's tokens — lighter weight for "secondary action".
-  // Without color → solid white pill (consistent with menu nav buttons).
+  // Without color → neutral gray. Earlier build only used color on hover,
+  // so on touch devices coloured buttons looked identical to gray ones.
   if(color){
-    // Bumped from 12/25 → 22/40 + 60 stroke so coloured buttons read as
-    // proper solid pills instead of washed-out tints. Was visually thinner
-    // than the gray buttons next to them which broke design hierarchy.
-    X.fillStyle=hv?color+'40':color+'22';
-    X.strokeStyle=color+'60';X.lineWidth=1.5;
+    X.fillStyle=hv?color+'25':color+'12';
+    X.strokeStyle=color+'45';X.lineWidth=1.5;
   }else{
-    // Neutral pill — solid TH.btnBg (.95 opacity in light, .12 in dark).
-    // Stroke uses the same accent tint on hover; subtle border otherwise.
     X.fillStyle=hv?TH.btnHover:TH.btnBg;
     X.strokeStyle=hv?TH.accent+'60':TH.border;X.lineWidth=hv?1.5:1;
   }
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.fill();
   X.beginPath();X.roundRect(x-dw/2,y-dh/2,dw,dh,r);X.stroke();
-  // Text always uses btnText (full contrast). Earlier code dimmed labels
-  // to btnTextSec when not hovered — but on touch devices there's no hover
-  // state, so every button label looked permanently grey/washed-out.
-  txt(label,x,y,floor(h*.38),TH.btnText);
+  txt(label,x,y,floor(h*.38),color?TH.text:(hv?TH.btnText:TH.btnTextSec));
   if(!blocked&&tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();tapped=false;return true}
   return false;
 }
