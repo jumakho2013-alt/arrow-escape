@@ -67,7 +67,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777668664"></script>
+<script src="levels-baked.js?v=1777671652"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1411,15 +1411,15 @@ function generateLevel(lvl,customSeed){
   // This fills holes by making existing arrows more snake-like instead of
   // creating separate tiny arrows.
   let detoured=1;
-  // Per-arrow detour budget: cap at ~half the original segments. The
-  // earlier "detour everything possible" pass turned every long arrow
-  // into a zigzag clew that couldn't visibly INTERACT with neighbour
-  // arrows — chains broke down because each snake was busy folding into
-  // itself. Halving the detours leaves more straight runs, which then
-  // get scored higher as they cross OTHER arrows' escape lines.
+  // Per-arrow detour budget: capped at 12% of original segments + 70%
+  // skip rate, so ~3-4% of segments get detoured (was ~32%). User
+  // explicitly asked for 80% LESS internal zigzag — the tight back-and-
+  // forth bumps that made every snake coil around itself instead of
+  // weaving past neighbours. Natural turns from Pass-1 growth survive
+  // because they come from the seed walk, not this pass.
   const _detourBudget=new Array(placed.length);
   for(let i=0;i<placed.length;i++){
-    _detourBudget[i]=Math.max(0, Math.floor((placed[i].cells.length-1)*0.5));
+    _detourBudget[i]=Math.max(0, Math.floor((placed[i].cells.length-1)*0.12));
   }
   while(detoured>0){
     detoured=0;
@@ -1434,10 +1434,11 @@ function generateLevel(lvl,customSeed){
       // segment routes the path sideways and breaks that invariant — the
       // player taps an arrow that visually points UP and it flies LEFT.
       for(let k=0;k<a.cells.length-2;k++){
-        // Skip ~35% of segments randomly. Reduces internal zigzag density
-        // by roughly 25-30% — straighter runs, more visual room for
-        // chain interactions between separate arrows.
-        if(rng()<0.35)continue;
+        // Skip ~70% of segments randomly. Combined with the 12% budget
+        // above, this leaves only the rare detour where it most helps
+        // chain crossing — most arrows pass through with their natural
+        // walk-grown turns intact.
+        if(rng()<0.70)continue;
         const p0=a.cells[k],p1=a.cells[k+1];
         const dr=p1[0]-p0[0],dc=p1[1]-p0[1];
         const sides=(dr!==0)?[[0,1],[0,-1]]:[[1,0],[-1,0]];
