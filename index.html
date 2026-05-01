@@ -67,7 +67,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777674231"></script>
+<script src="levels-baked.js?v=1777676297"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -704,6 +704,7 @@ let ALLOW_DOT_FILL=false; // QA flag: ?dots=1 restores 1-cell filler arrows
 let CHAIN_MODE=true; // Variant D enabled by default; ?chains=0 to disable
 let CLUSTERS_MODE=true; // Variant E enabled by default; ?clusters=0 to disable
 let _clusterCenters=[]; // Set per-level by generateLevel; read by tryBuildArrow
+let _maxBlockers=1;     // Late-level chain depth — set per-level, read by tryBuildArrow
 // QA flag: ?level=N in the URL jumps straight to that level so you can
 // preview generator changes without playing through the early levels. Also
 // unlocks all levels up to N in `maxLevel`. Doesn't persist to localStorage —
@@ -1210,12 +1211,27 @@ function generateLevel(lvl,customSeed){
 
   gridCols=cols;gridRows=rows;
 
-  // Variant E — pick 3 cluster centers; scoring penalises cells far from
+  // Late-level scaling: once `p` saturates at lvl 75 the grid + length
+  // are maxed out. Difficulty keeps growing via cluster density (more
+  // islands → more spatial constraints). Smooth ramp lvl 75 → 1500,
+  // then stepped +1 cluster every 50 levels past 1500.
+  // _maxBlockers stays at 1 — bumping it caused 50%+ seeds to deadlock
+  // (chain cycles rejected by solvability check).
+  _maxBlockers=1;
+  let numClusters;
+  if(lvl<=1500){
+    const q=Math.max(0,(lvl-75)/1425); // 0..1 over lvls 75..1500
+    numClusters=floor(lrp(3,8,q)+.5);
+  }else{
+    numClusters=8+floor((lvl-1500)/50); // +1 per 50 lvls after 1500
+  }
+  numClusters=Math.min(20,numClusters);
+
+  // Variant E — pick cluster centers; scoring penalises cells far from
   // the nearest one so arrows form separate islands. _clusterCenters is
   // module-level so tryBuildArrow can read it (no extra parameter).
   _clusterCenters=[];
   if(CLUSTERS_MODE){
-    const numClusters=3;
     for(let i=0;i<numClusters;i++){
       const baseR=floor((i+.5)/numClusters*rows);
       const baseC=floor((.3+.4*rng())*cols);
@@ -1652,7 +1668,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
           escLen++;
           cr+=DY[d];cc+=DX[d];
         }
-        if(blockerCount>1)continue;
+        if(blockerCount>_maxBlockers)continue;
         // Score:
         //   +4.0 per neighbor already occupied → new arrows start attached to
         //        existing strands instead of spawning as separate islands.
