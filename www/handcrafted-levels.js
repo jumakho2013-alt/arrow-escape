@@ -85,15 +85,15 @@ const HANDCRAFTED_LEVELS = {
       { c: [[2,1],[1,1],[1,2]], d: 1 },
       // Top-right lobe
       { c: [[2,7],[1,7],[1,6]], d: 1 },
-      // Top valley — points UP off grid (free), keeps heart shape readable
-      { c: [[1,4]], d: 1 },
+      // Top valley — DOWN (locked by mid + lower-left + bottom point chain)
+      { c: [[1,4]], d: 3 },
       // Mid horizontal — heart's wide middle, free
       { c: [[3,2],[3,3],[3,4],[3,5],[3,6]], d: 0 },
       // Lower-left — blocked by lower-right at (5,5)
       { c: [[5,2],[5,3],[5,4]], d: 0 },
       // Lower-right — free
       { c: [[5,5],[5,6]], d: 0 },
-      // Heart point — points DOWN off grid, free
+      // Heart point — points DOWN off grid (free)
       { c: [[7,4]], d: 3 },
     ]
   },
