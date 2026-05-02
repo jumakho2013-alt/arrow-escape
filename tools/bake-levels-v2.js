@@ -700,30 +700,51 @@ function bake(numLevels){
       {bonus:18,penalty:6,score:0},
       {bonus:10,penalty:3,score:-16}
     ];
+    // Difficulty curve that grows INDEFINITELY. User reference: every
+    // ~100 levels feels meaningfully harder than the previous block.
+    //   • hardCap on initial openness shrinks with level (more locks)
+    //   • minDepth on chain depth grows with level (longer solve waves)
+    // Both clamp at extreme bounds so absurdly high levels stay solvable.
+    let hardCap, minDepth;
+    if(lvl<=5){          // tutorial
+      hardCap=2; minDepth=1;
+    }else if(lvl<=30){   // early
+      hardCap=3; minDepth=2;
+    }else if(lvl<=100){  // mid
+      hardCap=3; minDepth=3;
+    }else if(lvl<=500){
+      hardCap=2; minDepth=Math.min(6,3+Math.floor((lvl-100)/100));
+    }else if(lvl<=2000){
+      hardCap=2; minDepth=Math.min(10,6+Math.floor((lvl-500)/300));
+    }else{
+      hardCap=1; minDepth=Math.min(14,10+Math.floor((lvl-2000)/1500));
+    }
+    let bestSoftFallback=null,bestSoftScore=-Infinity;
     for(const profile of lockProfiles){
       _lockHeadBonus=profile.bonus;
       _lockHeadPenalty=profile.penalty;
       for(const seed of seeds){
         const lev=generateLevel(lvl, seed);
-        // Reject seeds that produce deadlocked levels — chain cycles.
         if(!isSolvable(lev))continue;
         const dep=dependencyStats(lev);
         if(dep.dead)continue;
-        // Select for actual puzzle structure:
-        // - fewer immediately tappable arrows
-        // - more blocking edges
-        // - deeper solve waves / longer chains
-        // Keep visual score as a secondary tie-breaker.
         const openness=dep.initial/Math.max(1,lev.arrows.length);
-        const targetOpen=lev.arrows.length<12?.35:.16;
+        const targetOpen=lev.arrows.length<12?.18:.07;
         const sc=scoreLevel(lev)
           + dep.edgesStart*2.1
-          + dep.depth*12
-          + dep.maxChain*16
+          + dep.depth*14
+          + dep.maxChain*20
           + profile.score
-          - Math.max(0,openness-targetOpen)*320;
-        if(sc>bestScore){bestScore=sc;best=lev}
+          - Math.max(0,openness-targetOpen)*800;
+        // Hard-cap pass first; soft fallback if nothing satisfies.
+        if(dep.initial<=hardCap && dep.depth>=minDepth){
+          if(sc>bestScore){bestScore=sc;best=lev}
+        }
+        if(sc>bestSoftScore){bestSoftScore=sc;bestSoftFallback=lev}
       }
+    }
+    if(!best&&bestSoftFallback){
+      best=bestSoftFallback;
     }
     if(!best){
       // None of 8 seeds was solvable — extreme rare. Fall back to first

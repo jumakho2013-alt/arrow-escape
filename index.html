@@ -68,6 +68,10 @@ body.letterboxed canvas{
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
 <script src="levels-baked.js?v=1777684736"></script>
+<!-- Handcrafted milestone levels — tutorial (1-10) plus picture/showcase
+     levels at key milestones. These take priority over procedural / baked
+     when their level number matches. -->
+<script src="handcrafted-levels.js?v=1"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1310,12 +1314,26 @@ function generateLevel(lvl,customSeed){
   zoomLevel=1;panX=0;panY=0;_pinchStartDist=0;_panStart=null;
   updateStreak();
 
-  // Baked-level fast path: levels 1..200 (regular play only — daily/weekly
+  // Handcrafted fast path: I designed specific levels by hand (tutorial
+  // 1-10 + decorative milestones at 5, 10, 50, 100…). When the level
+  // number has a hand-tuned layout, use it instead of procedural.
+  // Daily/weekly bypass this — they pass customSeed.
+  if(!FORCE_FRESH_LEVELS&&customSeed==null&&typeof window!=='undefined'
+     &&window.HANDCRAFTED_LEVELS&&window.HANDCRAFTED_LEVELS[lvl]){
+    const hc=window.HANDCRAFTED_LEVELS[lvl];
+    gridCols=hc.cols;gridRows=hc.rows;
+    arrows=hc.arrows.map(a=>({cells:a.c.map(c=>[c[0],c[1]]),dir:a.d,alive:true}));
+    minMoves=arrows.length;
+    moves=0;timer=0;undosLeft=3;
+    const key='ae_best_'+lvl;
+    bestTime=+localStorage.getItem(key)||0;
+    return;
+  }
+
+  // Baked-level fast path: levels 1..500 (regular play only — daily/weekly
   // pass customSeed and stay procedural). The pre-built layout was scored
   // and selected for tangledness during the bake, so every player sees the
   // same puzzle for the same level number.
-  // Braid mode forces fresh procedural — baked levels were produced without
-  // body-overlap and would not show the new mechanic.
   if(!FORCE_FRESH_LEVELS&&customSeed==null&&lvl>=1&&lvl<=500&&typeof window!=='undefined'&&window.BAKED_LEVELS){
     const baked=window.BAKED_LEVELS[lvl-1];
     if(baked){
