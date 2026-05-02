@@ -297,8 +297,26 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         if(braidMode&&(d===0||d===2)&&(occupied[1]||occupied[3]))s+=3.8;
         if(braidMode&&(d===1||d===3)&&(occupied[0]||occupied[2]))s+=3.8;
         if(braidMode&&placed&&placed.length>0&&adjArrows.size===0&&cells.length>4)s-=3.0;
-        if(d!==lastStepDir)s+=2.0;
-        else if(straightRun>=2)s-=2.0;
+        // Maze look — long straight runs > zigzag turns. Was reverse.
+        // Competitor reference: snakes pack into parallel walls, not
+        // wandering spaghetti. Reward continuing in same direction.
+        if(d===lastStepDir)s+=2.5;
+        else s+=0.5;
+        if(straightRun>=4)s+=1.0; // bonus for keeping it going
+        // Parallel-adjacency bonus — cell next to an arrow body whose
+        // ARROW points in a parallel direction (same axis). Builds
+        // "wall" pattern characteristic of a maze rather than scattered.
+        let parallelAdj=0;
+        for(let dd=0;dd<4;dd++){
+          const nr=r+DY[dd],nc=c+DX[dd];
+          if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+          const idx=occ[nr][nc];
+          if(idx===-1||!placed[idx])continue;
+          const oDir=placed[idx].dir;
+          const sameAxis=(d&1)===(oDir&1); // both horizontal or both vertical
+          if(sameAxis)parallelAdj++;
+        }
+        s+=parallelAdj*1.8;
         // Variant D — bonus if cell crosses an earlier-placed arrow's escape line
         if(placed){
           let crossings=0;
@@ -361,7 +379,10 @@ function generateLevel(lvl, customSeed){
   const pattern=getLevelPattern(lvl);
   _levelPattern=pattern;
   const minLen=2;
-  const maxLen=tut?tut.maxLen:floor(lrp(25,108,p)*pattern.lenScale+.5);
+  // Reduced max from 108 → 35: competitor reference shows mostly short-
+  // medium arrows (3-15 cells) packed densely, never giant 100-cell
+  // serpents. This gives 30-50 short arrows per board → maze look.
+  const maxLen=tut?tut.maxLen:floor(lrp(8,35,p)*pattern.lenScale+.5);
 
   // Tutorial: no chain blockers. Otherwise late-level scaling kicks in.
   _maxBlockers=tut?0:1;

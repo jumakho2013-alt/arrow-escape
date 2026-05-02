@@ -1380,7 +1380,8 @@ function generateLevel(lvl,customSeed){
   const pattern=getLevelPattern(lvl);
   _levelPattern=pattern;
   const minLen=2;
-  const maxLen=tut?tut.maxLen:floor(lrp(25,108,p)*pattern.lenScale+.5);
+  // Reduced max from 108 → 35 to match competitor's dense-maze look.
+  const maxLen=tut?tut.maxLen:floor(lrp(8,35,p)*pattern.lenScale+.5);
 
   gridCols=cols;gridRows=rows;
 
@@ -1984,15 +1985,23 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         // small escape hatch early in growth so the arrow can still leave a
         // pocket and become long, but otherwise pull it back into the knot.
         if(braidMode&&placed&&placed.length>0&&adjArrows.size===0&&cells.length>4)s-=3.0;
-        // Turn bonus: dominant signal — every arrow should be twisty.
-        // Was +1.6 (weaker than the +2.0 proximity bonus), so on the grid
-        // edge with few neighbors arrows still grew straight. Bumped to
-        // +3.0 so even an isolated arrow strongly prefers turning.
-        if(d!==lastStepDir)s+=2.0;
-        // Straight penalty: was -1.2, weak vs RNG noise. Now -3.5 — combined
-        // with the hard cap above, straight runs of 3+ are statistically
-        // rare and never hit the wall-hugging "tap outer ring" exploit.
-        else if(straightRun>=2)s-=2.0;
+        // Maze look — long straight runs > zigzag turns.
+        if(d===lastStepDir)s+=2.5;
+        else s+=0.5;
+        if(straightRun>=4)s+=1.0;
+        // Parallel-adjacency bonus — cell next to an arrow body whose
+        // arrow points along the same axis. Builds wall-like pattern.
+        let parallelAdj=0;
+        for(let dd=0;dd<4;dd++){
+          const nr=r+DY[dd],nc=c+DX[dd];
+          if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+          const idx=occ[nr][nc];
+          if(idx===-1||!placed[idx])continue;
+          const oDir=placed[idx].dir;
+          const sameAxis=(d&1)===(oDir&1);
+          if(sameAxis)parallelAdj++;
+        }
+        s+=parallelAdj*1.8;
         // Variant D — chain mode: STRONG bonus if this cell is on the escape
         // line of an already-placed arrow. That arrow solves AFTER this one
         // in game order; placing our body on its escape line means the player
