@@ -705,6 +705,148 @@ let CHAIN_MODE=true; // Variant D enabled by default; ?chains=0 to disable
 let CLUSTERS_MODE=true; // Variant E enabled by default; ?clusters=0 to disable
 let _clusterCenters=[]; // Set per-level by generateLevel; read by tryBuildArrow
 let _maxBlockers=1;     // Late-level chain depth — set per-level, read by tryBuildArrow
+let _levelPattern=null; // Set per-level by generateLevel; read by tryBuildArrow
+
+// Visual level patterns. They only bias where arrows grow; escape rules,
+// blocker limits, chain dependencies and solvability stay unchanged.
+const LEVEL_PATTERNS=[
+  {id:'braid',name:'Classic braid',lenScale:1,clusterScale:1,longMinScale:1},
+  {id:'spiral',name:'Spiral coil',lenScale:1.08,clusterScale:1.15,longMinScale:1.04},
+  {id:'mosaic',name:'Mosaic tiles',lenScale:.62,clusterScale:1.75,longMinScale:.72},
+  {id:'piton',name:'Big pitons',lenScale:1.38,clusterScale:.45,longMinScale:1.28},
+  {id:'diagonal',name:'Diagonal weave',lenScale:1.04,clusterScale:1.15,longMinScale:1},
+  {id:'rings',name:'Concentric rings',lenScale:1.1,clusterScale:1.25,longMinScale:1.04},
+  {id:'maze',name:'Maze rows',lenScale:.92,clusterScale:1.35,longMinScale:.9},
+  {id:'rays',name:'Center rays',lenScale:1.02,clusterScale:1.2,longMinScale:1}
+];
+
+function getLevelPattern(lvl){
+  if(lvl<=3)return LEVEL_PATTERNS[0];
+  return LEVEL_PATTERNS[Math.floor((lvl-4)/7)%LEVEL_PATTERNS.length];
+}
+
+function buildPatternCenters(pattern,rows,cols,numClusters,rng){
+  const centers=[];
+  const cR=(rows-1)/2,cC=(cols-1)/2;
+  const maxRad=Math.max(2,Math.min(rows,cols)*.47);
+  const push=(r,c)=>centers.push({
+    r:Math.max(1,Math.min(rows-2,Math.round(r))),
+    c:Math.max(1,Math.min(cols-2,Math.round(c)))
+  });
+
+  if(pattern.id==='spiral'){
+    // Spiral: attractors crawl around the center with increasing radius.
+    for(let i=0;i<numClusters;i++){
+      const t=i/Math.max(1,numClusters-1);
+      const a=t*Math.PI*5.4+rng()*.5;
+      const rad=maxRad*(.12+.82*t);
+      push(cR+Math.sin(a)*rad,cC+Math.cos(a)*rad);
+    }
+  }else if(pattern.id==='mosaic'){
+    // Mosaic: evenly spaced anchors produce short repeated blocks.
+    const bands=Math.max(2,Math.round(Math.sqrt(numClusters)));
+    for(let r=0;r<bands&&centers.length<numClusters;r++){
+      for(let c=0;c<bands&&centers.length<numClusters;c++){
+        push((r+.5)/bands*rows,(c+.5)/bands*cols);
+      }
+    }
+  }else if(pattern.id==='piton'){
+    // Big pitons: few central anchors make dominant snakes per board.
+    const n=Math.max(2,Math.round(numClusters*.45));
+    for(let i=0;i<n;i++){
+      const a=i/n*Math.PI*2+rng()*.45;
+      const rad=maxRad*(.12+.26*rng());
+      push(cR+Math.sin(a)*rad,cC+Math.cos(a)*rad);
+    }
+  }else if(pattern.id==='diagonal'){
+    // Diagonal weave: alternating diagonal anchors across the grid.
+    for(let i=0;i<numClusters;i++){
+      const t=(i+.5)/numClusters;
+      const flip=i%2===0;
+      push(t*rows,flip?t*cols:(1-t)*cols);
+    }
+  }else if(pattern.id==='rings'){
+    // Concentric rings: nested radius bands around the center.
+    const ringCount=Math.max(2,Math.min(5,Math.round(Math.sqrt(numClusters))));
+    for(let i=0;i<numClusters;i++){
+      const ring=i%ringCount;
+      const a=(i/ringCount)*Math.PI*.9+rng()*.35;
+      const rad=maxRad*(.18+.75*(ring/(ringCount-1||1)));
+      push(cR+Math.sin(a)*rad,cC+Math.cos(a)*rad);
+    }
+  }else if(pattern.id==='maze'){
+    // Maze rows: alternating horizontal lanes like compact zigzag rows.
+    for(let i=0;i<numClusters;i++){
+      const row=(i+.5)/numClusters*rows;
+      const c=(i%2===0)?.25*cols:.75*cols;
+      push(row,c+(rng()-.5)*cols*.12);
+    }
+  }else if(pattern.id==='rays'){
+    // Center rays: spoke anchors radiate from center to edges.
+    const spokes=8;
+    for(let i=0;i<numClusters;i++){
+      const spoke=i%spokes;
+      const a=spoke/spokes*Math.PI*2;
+      const rad=maxRad*(.2+.72*((Math.floor(i/spokes)+1)/(Math.ceil(numClusters/spokes)+1)));
+      push(cR+Math.sin(a)*rad,cC+Math.cos(a)*rad);
+    }
+  }else{
+    for(let i=0;i<numClusters;i++){
+      const baseR=floor((i+.5)/numClusters*rows);
+      const baseC=floor((.3+.4*rng())*cols);
+      push(baseR,baseC);
+    }
+  }
+  return centers;
+}
+
+function patternCellBias(r,c,d,rows,cols,isHead){
+  const pattern=_levelPattern;
+  if(!pattern)return 0;
+  const id=pattern.id;
+  const cR=(rows-1)/2,cC=(cols-1)/2;
+  const rr=r-cR,cc=c-cC;
+  const rad=Math.sqrt(rr*rr+cc*cc);
+  const maxRad=Math.max(1,Math.sqrt(cR*cR+cC*cC));
+  let s=0;
+
+  if(id==='spiral'){
+    const a=Math.atan2(rr,cc);
+    const spiral=(a+Math.PI)/(Math.PI*2)+rad/maxRad*1.65;
+    s+=Math.cos(spiral*Math.PI*2)*1.8;
+  }else if(id==='mosaic'){
+    const tile=4;
+    const nearR=Math.min(r%tile,tile-r%tile);
+    const nearC=Math.min(c%tile,tile-c%tile);
+    s+=(2.5-Math.min(nearR,nearC))*(isHead?1.5:.75);
+  }else if(id==='piton'){
+    s+=(1-rad/maxRad)*(isHead?5.5:2.2);
+  }else if(id==='diagonal'){
+    const band1=Math.abs((r/(rows-1||1))-(c/(cols-1||1)));
+    const band2=Math.abs((r/(rows-1||1))-(1-c/(cols-1||1)));
+    s+=(1-Math.min(band1,band2))*3.5;
+    if((d===0||d===2)&&Math.abs(rr)>Math.abs(cc)*.65)s+=.9;
+    if((d===1||d===3)&&Math.abs(cc)>Math.abs(rr)*.65)s+=.9;
+  }else if(id==='rings'){
+    const bands=4;
+    const x=(rad/maxRad)*bands;
+    const near=Math.abs(x-Math.round(x));
+    s+=(.5-near)*5.2;
+  }else if(id==='maze'){
+    const rowBand=Math.abs((r%4)-1.5);
+    s+=(1.5-rowBand)*1.8;
+    if(d===0||d===2)s+=isHead?1.2:2.0;
+  }else if(id==='rays'){
+    const ang=Math.atan2(rr,cc);
+    const spoke=Math.round(ang/(Math.PI/4))*(Math.PI/4);
+    s+=Math.cos(ang-spoke)*2.8;
+    if(isHead){
+      const outward=(Math.abs(cc)>Math.abs(rr))?(cc>=0?0:2):(rr>=0?3:1);
+      if(d===outward)s+=3.5;
+    }
+  }
+  return s;
+}
 // QA flag: ?level=N in the URL jumps straight to that level so you can
 // preview generator changes without playing through the early levels. Also
 // unlocks all levels up to N in `maxLevel`. Doesn't persist to localStorage —
@@ -1206,8 +1348,10 @@ function generateLevel(lvl,customSeed){
   // the arrow-stroke disappearing.
   const cols=floor(lrp(14,32,p)+.5);
   const rows=floor(lrp(19,42,p)+.5);
+  const pattern=getLevelPattern(lvl);
+  _levelPattern=pattern;
   const minLen=2;
-  const maxLen=floor(lrp(25,108,p)+.5);
+  const maxLen=floor(lrp(25,108,p)*pattern.lenScale+.5);
 
   gridCols=cols;gridRows=rows;
 
@@ -1232,16 +1376,14 @@ function generateLevel(lvl,customSeed){
   numClusters=Math.min(24,numClusters);
   lateExtra=Math.min(2.5,lateExtra);
 
-  // Variant E — pick cluster centers; scoring penalises cells far from
-  // the nearest one so arrows form separate islands. _clusterCenters is
-  // module-level so tryBuildArrow can read it (no extra parameter).
+  // Pattern centers: same cluster mechanic, different attractor layouts.
+  // This is the visual variety layer (spiral, mosaic, pitons, diagonals,
+  // rings, maze rows, rays). It changes where arrows prefer to grow, not
+  // the solve rules.
   _clusterCenters=[];
   if(CLUSTERS_MODE){
-    for(let i=0;i<numClusters;i++){
-      const baseR=floor((i+.5)/numClusters*rows);
-      const baseC=floor((.3+.4*rng())*cols);
-      _clusterCenters.push({r:baseR,c:baseC});
-    }
+    numClusters=Math.max(2,Math.round(numClusters*pattern.clusterScale));
+    _clusterCenters=buildPatternCenters(pattern,rows,cols,numClusters,rng);
   }
 
   // occ[r][c] = arrow index that owns this cell, or -1
@@ -1258,7 +1400,7 @@ function generateLevel(lvl,customSeed){
   // arrows per board at lvl 1500+ so there's more to track even
   // though the grid stays maxed.
   let safety=3000;
-  const longMinBase=floor(maxLen*lrp(.55,.70,p));
+  const longMinBase=floor(maxLen*lrp(.55,.70,p)*pattern.longMinScale);
   const longMin=max(15,floor(longMinBase*max(0.45,1-lateExtra*0.30)));
   while(safety-->0){
     const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,{minAcceptLen:longMin});
@@ -1699,6 +1841,14 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
         // exit corridor are now strongly preferred, so subsequent arrows
         // routinely have something meaningful to BLOCK.
         if(CHAIN_MODE)s+=escLen*4;
+        // Real-puzzle bonus: prefer heads whose exit is blocked by exactly
+        // one already placed arrow. Solvability filtering rejects cycles,
+        // but this makes the generator actively build locks instead of
+        // mostly independent snakes.
+        if(CHAIN_MODE&&placed&&placed.length>4){
+          if(blockerCount===1)s+=10;
+          else s-=4;
+        }
         // Direction-variance bonus: the level should have a healthy
         // mix of all four exit directions, otherwise the player can
         // spam-tap one column. Reward under-represented directions,
@@ -1725,6 +1875,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
           }
           s-=minD*.5;
         }
+        s+=patternCellBias(r,c,d,rows,cols,true);
         candidates.push({hr:r,hc:c,dir:d,s});
       }
     }
@@ -1853,6 +2004,7 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
           }
           s-=minD*.4;
         }
+        s+=patternCellBias(r,c,d,rows,cols,false);
         return{cell:[r,c],d,s};
       });
       scored.sort((a,b)=>b.s-a.s);
