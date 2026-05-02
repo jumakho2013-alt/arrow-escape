@@ -11,197 +11,242 @@
 const HANDCRAFTED_LEVELS = {
   // ─────────────────────────────────────────────────────────────────
   // LEVEL 1 — "Two rows" (smallest possible game)
-  // Two arrows. Both immediately tappable. Pure introduction.
+  // 2 free arrows. Pure introduction.
   // ─────────────────────────────────────────────────────────────────
   1: {
     cols: 6, rows: 5,
     arrows: [
-      { c: [[1,0],[1,1],[1,2]], d: 0 }, // row 1, escape right
-      { c: [[3,0],[3,1],[3,2]], d: 0 }, // row 3, escape right
+      { c: [[1,0],[1,1],[1,2]], d: 0 },
+      { c: [[3,0],[3,1],[3,2]], d: 0 },
     ]
   },
 
   // ─────────────────────────────────────────────────────────────────
-  // LEVEL 2 — "First chain"
-  // 3 arrows. Top one blocks the down-arrow's escape line at col 1.
-  // Player must tap top first, then down arrow can fly.
+  // LEVEL 2 — "First chain" — 3 arrows, 1 blocker
   // ─────────────────────────────────────────────────────────────────
   2: {
     cols: 6, rows: 5,
     arrows: [
-      // Top row, right-pointing. Body at col 1 — blocks col 1 going up/down.
-      { c: [[1,0],[1,1]], d: 0 },
-      // Down-pointing at col 4. Free path. Tap any time.
-      { c: [[0,4],[1,4]], d: 3 },
-      // Up-pointing at col 1, head (3,1) → escape (2,1),(1,1) — (1,1) is
-      // body of arrow 0. BLOCKED until arrow 0 flies away.
-      { c: [[4,1],[3,1]], d: 1 },
+      { c: [[1,0],[1,1]], d: 0 },           // free, blocks col 1
+      { c: [[0,4],[1,4]], d: 3 },           // free
+      { c: [[4,1],[3,1]], d: 1 },           // up at col 1, blocked by arr 0
     ]
   },
 
   // ─────────────────────────────────────────────────────────────────
-  // LEVEL 3 — "Two parallel chains"
-  // 4 arrows. Two independent chains side-by-side. Player picks order.
+  // LEVEL 3 — "Two parallel chains" — pick which to attack first
   // ─────────────────────────────────────────────────────────────────
   3: {
     cols: 7, rows: 7,
     arrows: [
-      // Top-left chain: free arrow + arrow it blocks
-      { c: [[1,0],[1,1]], d: 0 },              // free, blocks col 1
-      { c: [[5,1],[4,1],[3,1]], d: 1 },        // up at col 1, blocked by row 1 col 1
-      // Top-right chain: another free + blocked pair
-      { c: [[1,4],[1,5]], d: 0 },              // free, blocks col 5
-      { c: [[5,5],[4,5],[3,5]], d: 1 },        // up at col 5, blocked by row 1 col 5
+      { c: [[1,0],[1,1]], d: 0 },           // free, blocks col 1
+      { c: [[5,1],[4,1],[3,1]], d: 1 },     // up at col 1, blocked
+      { c: [[1,4],[1,5]], d: 0 },           // free, blocks col 5
+      { c: [[5,5],[4,5],[3,5]], d: 1 },     // up at col 5, blocked
     ]
   },
 
   // ─────────────────────────────────────────────────────────────────
-  // LEVEL 4 — "Cross" (introduce 4-direction variety)
-  // 4 arrows pointing in 4 different directions, forming a small cross
-  // dependency.
+  // LEVEL 4 — "Cross" 4 directions
   // ─────────────────────────────────────────────────────────────────
   4: {
     cols: 7, rows: 7,
     arrows: [
-      // Right → free, blocks col 3-5 of row 3
-      { c: [[3,0],[3,1],[3,2]], d: 0 },
-      // Down → blocked by row 3 at col 4 (line passes (3,4))
-      // Wait we need col same as something in arrow 0 → arrow 0 is row 3.
-      // Down-arrow at col 1 escapes through (4,1),(5,1),(6,1) — all free.
-      // Let me put it BLOCKED by another arrow.
-      // Down-arrow head (0,5), escape (1,5),(2,5),(3,5),(4,5),(5,5),(6,5)
-      // Need a blocker on col 5. Put arrow 3 below.
-      { c: [[0,5]], d: 3 },                  // single-cell down, blocked by row5
-      // Free up-arrow on left
-      { c: [[6,0],[5,0],[4,0]], d: 1 },
-      // Right-pointing in row 5 — its body at (5,5) blocks down-arrow above
-      { c: [[5,3],[5,4],[5,5]], d: 0 },
+      { c: [[3,0],[3,1],[3,2]], d: 0 },     // free right
+      { c: [[0,5]], d: 3 },                  // down, blocked by row 5 col 5
+      { c: [[6,0],[5,0],[4,0]], d: 1 },     // free up
+      { c: [[5,3],[5,4],[5,5]], d: 0 },     // free right, blocks col 5
     ]
   },
 
   // ─────────────────────────────────────────────────────────────────
-  // LEVEL 5 — "Plus sign" — 5 arrows forming a + shape
-  // Central arrow blocks 4 others.
+  // LEVEL 5 — "Plus sign" — central arrow blocks 2 others
   // ─────────────────────────────────────────────────────────────────
   5: {
     cols: 9, rows: 9,
     arrows: [
-      // Central horizontal — body at row 4 cols 2-4, blocks col 3 going up/down
-      { c: [[4,2],[4,3],[4,4]], d: 0 },
-      // Top-down arrow at col 3 — blocked by central body at (4,3)
-      { c: [[0,3],[1,3]], d: 3 },
-      // Bottom-up arrow at col 4 — blocked by central head (4,4).
-      // Different col from top arrow → no mutual cycle.
-      { c: [[8,4],[7,4]], d: 1 },
-      // Right edge arrow — blocks central's escape line
-      { c: [[4,7],[4,8]], d: 0 },
-      // Left up — completely free
-      { c: [[8,0],[7,0]], d: 1 },
+      { c: [[4,2],[4,3],[4,4]], d: 0 },     // central, blocked by arr 3
+      { c: [[0,3],[1,3]], d: 3 },           // top-down at col 3, blocked by central
+      { c: [[8,4],[7,4]], d: 1 },           // bottom-up at col 4, blocked by central
+      { c: [[4,7],[4,8]], d: 0 },           // free right, blocks central
+      { c: [[8,0],[7,0]], d: 1 },           // free up
     ]
   },
 
   // ─────────────────────────────────────────────────────────────────
-  // LEVEL 6 — "Heart shape" first decorative
-  // Heart silhouette in 9×8 grid using 7 arrows.
+  // LEVEL 6 — "Heart shape" — decorative, with internal chain.
+  // 7 arrows form a heart silhouette. Mid horizontal blocks two
+  // other arrows so the heart unravels in order, not all at once.
   // ─────────────────────────────────────────────────────────────────
   6: {
     cols: 9, rows: 8,
     arrows: [
-      // Top-left lobe of heart: short up-arrow
+      // Top-left lobe
       { c: [[2,1],[1,1],[1,2]], d: 1 },
-      // Top-right lobe: short up-arrow
+      // Top-right lobe
       { c: [[2,7],[1,7],[1,6]], d: 1 },
-      // Top valley between lobes
+      // Top valley — points UP off grid (free), keeps heart shape readable
       { c: [[1,4]], d: 1 },
-      // Mid horizontal — heart's wide middle
+      // Mid horizontal — heart's wide middle, free
       { c: [[3,2],[3,3],[3,4],[3,5],[3,6]], d: 0 },
-      // Lower-left going down/in
+      // Lower-left — blocked by lower-right at (5,5)
       { c: [[5,2],[5,3],[5,4]], d: 0 },
-      // Lower-right
+      // Lower-right — free
       { c: [[5,5],[5,6]], d: 0 },
-      // Heart point at bottom
+      // Heart point — points DOWN off grid, free
       { c: [[7,4]], d: 3 },
     ]
   },
 
   // ─────────────────────────────────────────────────────────────────
-  // LEVEL 7 — "Chain of 4" (linear chain teaches order)
-  // 5 arrows, 4 in a strict chain. Only ONE tappable initially.
+  // LEVEL 7 — "Linear chain of 4" + 1 free
+  // Single column of single-cell arrows, each blocking the next.
+  // Initially 2 tappable; chain unwinds top-down.
   // ─────────────────────────────────────────────────────────────────
   7: {
-    cols: 8, rows: 8,
+    cols: 7, rows: 8,
     arrows: [
-      // Free arrow that starts the chain — body blocks col 6
-      { c: [[1,4],[1,5],[1,6]], d: 0 },
-      // Up at col 6 — blocked by row 1 above at (1,6)
-      { c: [[5,6],[4,6],[3,6]], d: 1 },
-      // Right at row 3, body crosses col 6 at (3,6) — blocked? wait arrow 1 body at row 3-5. So row 3 col 6 is arrow 1's body. Need to put arrow 2 elsewhere.
-      // Free arrow elsewhere
-      { c: [[7,0],[7,1],[7,2]], d: 0 },
-      // Up at col 2 — blocked by row 7's body at (7,2)? wait arrow 2 has body (7,2). so up arrow at col 2 escape line goes UP past (7,2)? Up-arrow head (5,2), escape (4,2),(3,2),(2,2),(1,2),(0,2). Empty. Free. Hmm.
-      // Actually let me make this column 1 since arrow 2 has (7,1).
-      // Up at col 1, head (5,1), escape (4,1),(3,1),(2,1),(1,1),(0,1). Empty. Free initially.
-      // To make it blocked, need something at row 0-4 col 1.
-      // Skip this restructure for now — make 5 arrows, simpler chain.
-      { c: [[6,1],[5,1]], d: 1 },                  // up, free
+      { c: [[0,1]], d: 1 },                  // top, free (escape off grid up)
+      { c: [[1,1]], d: 1 },                  // blocked by arr 0
+      { c: [[2,1]], d: 1 },                  // blocked by arr 1 (then arr 0 already dead)
+      { c: [[3,1]], d: 1 },                  // blocked by arr 2
+      { c: [[7,4],[7,5]], d: 0 },            // independent free arrow
     ]
   },
 
   // ─────────────────────────────────────────────────────────────────
-  // LEVEL 8 — "Mosaic 3×3" intro to dense pattern
-  // 6 arrows fitting like tiles.
+  // LEVEL 8 — "Mosaic with locks" — tile pattern with chain
   // ─────────────────────────────────────────────────────────────────
   8: {
     cols: 9, rows: 9,
     arrows: [
-      { c: [[1,0],[1,1],[1,2]], d: 0 },
-      { c: [[1,5],[1,6],[1,7]], d: 0 },
-      { c: [[4,0],[4,1],[4,2]], d: 0 },
-      { c: [[4,5],[4,6],[4,7]], d: 0 },
-      { c: [[7,0],[7,1],[7,2]], d: 0 },
-      { c: [[7,5],[7,6],[7,7]], d: 0 },
+      // Row 1 free arrows (block col 1, col 6 vertical traffic)
+      { c: [[1,0],[1,1]], d: 0 },
+      { c: [[1,5],[1,6]], d: 0 },
+      // Row 4 free arrows
+      { c: [[4,0],[4,1]], d: 0 },
+      { c: [[4,5],[4,6]], d: 0 },
+      // Row 7 free arrows
+      { c: [[7,0],[7,1]], d: 0 },
+      { c: [[7,5],[7,6]], d: 0 },
+      // Col 1 going up — blocked by ALL row arrows on left side at col 1
+      { c: [[8,1]], d: 1 },
+      // Col 6 going up — blocked by row arrows on right
+      { c: [[8,6]], d: 1 },
     ]
   },
 
   // ─────────────────────────────────────────────────────────────────
   // LEVEL 9 — "Spiral 7"
-  // 7 arrows winding inward.
   // ─────────────────────────────────────────────────────────────────
   9: {
     cols: 9, rows: 9,
     arrows: [
-      { c: [[0,0],[0,1],[0,2],[0,3]], d: 0 },     // top, escape right (off grid)
+      { c: [[0,0],[0,1],[0,2],[0,3]], d: 0 },     // top free
       { c: [[1,7],[2,7],[3,7]], d: 3 },            // right edge going down
-      { c: [[7,8],[7,7],[7,6],[7,5]], d: 2 },      // bottom row going left
-      { c: [[6,1],[5,1],[4,1]], d: 1 },            // left col going up
-      { c: [[2,3],[2,4],[2,5]], d: 0 },            // inner top going right
-      { c: [[5,5],[5,4],[5,3]], d: 2 },            // inner bottom going left
-      { c: [[4,4]], d: 1 },                         // single cell, escape up
+      { c: [[7,8],[7,7],[7,6],[7,5]], d: 2 },      // bottom free
+      { c: [[6,1],[5,1],[4,1]], d: 1 },            // left col free
+      { c: [[2,3],[2,4],[2,5]], d: 0 },            // inner top
+      { c: [[5,5],[5,4],[5,3]], d: 2 },            // inner bottom
+      { c: [[4,4]], d: 1 },                         // center
     ]
   },
 
   // ─────────────────────────────────────────────────────────────────
-  // LEVEL 10 — "Diamond" decorative milestone
-  // 8 arrows in diamond shape.
+  // LEVEL 10 — "Diamond" — decorative milestone, 8 arrows
   // ─────────────────────────────────────────────────────────────────
   10: {
     cols: 9, rows: 9,
     arrows: [
-      // Top tip
-      { c: [[0,4]], d: 1 },
-      // Upper-left diagonal-ish (using L shape)
+      { c: [[0,4]], d: 1 },                  // top tip
       { c: [[2,2],[2,3]], d: 0 },
-      // Upper-right
       { c: [[2,5],[2,6]], d: 0 },
-      // Middle row tips
       { c: [[4,0],[4,1]], d: 0 },
       { c: [[4,7],[4,8]], d: 0 },
-      // Lower-left
       { c: [[6,2],[6,3]], d: 0 },
-      // Lower-right
       { c: [[6,5],[6,6]], d: 0 },
-      // Bottom tip
-      { c: [[8,4]], d: 3 },
+      { c: [[8,4]], d: 3 },                  // bottom tip
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 20 — "Smiley face" milestone
+  // 12-arrow smiley: 2 eyes + curved mouth + outline.
+  // ─────────────────────────────────────────────────────────────────
+  20: {
+    cols: 11, rows: 11,
+    arrows: [
+      // Top of face — outline
+      { c: [[1,3],[1,4],[1,5],[1,6],[1,7]], d: 0 },
+      // Left eye (just the head, single cell)
+      { c: [[3,3]], d: 1 },
+      // Right eye
+      { c: [[3,7]], d: 1 },
+      // Nose
+      { c: [[5,5]], d: 1 },
+      // Mouth — curved smile (5 arrows in a row)
+      { c: [[7,3],[7,4]], d: 0 },
+      { c: [[8,5]], d: 3 },
+      { c: [[7,6],[7,7]], d: 0 },
+      // Bottom outline
+      { c: [[9,3],[9,4],[9,5],[9,6],[9,7]], d: 0 },
+      // Side outlines
+      { c: [[3,1],[4,1],[5,1],[6,1]], d: 1 },
+      { c: [[6,9],[5,9],[4,9],[3,9]], d: 3 },
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 50 — "House" milestone
+  // House: roof (triangle of arrows) + walls + door.
+  // ─────────────────────────────────────────────────────────────────
+  50: {
+    cols: 13, rows: 13,
+    arrows: [
+      // Roof apex
+      { c: [[1,6]], d: 1 },
+      // Roof slopes (left + right)
+      { c: [[2,4],[2,5]], d: 0 },
+      { c: [[2,7],[2,8]], d: 0 },
+      { c: [[3,2],[3,3]], d: 0 },
+      { c: [[3,9],[3,10]], d: 0 },
+      // Roof base
+      { c: [[4,2],[4,3],[4,4],[4,5],[4,6],[4,7],[4,8],[4,9],[4,10]], d: 0 },
+      // Left wall
+      { c: [[10,2],[9,2],[8,2],[7,2],[6,2],[5,2]], d: 1 },
+      // Right wall
+      { c: [[5,10],[6,10],[7,10],[8,10],[9,10],[10,10]], d: 3 },
+      // Door (3 cells vertical)
+      { c: [[10,6],[9,6],[8,6]], d: 1 },
+      // Window (single cell)
+      { c: [[7,4]], d: 0 },
+      { c: [[7,8]], d: 0 },
+      // Floor
+      { c: [[11,3],[11,4],[11,5],[11,6],[11,7],[11,8],[11,9]], d: 0 },
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 100 — "Crown" milestone
+  // 5-pointed crown silhouette with chain dependencies.
+  // ─────────────────────────────────────────────────────────────────
+  100: {
+    cols: 13, rows: 11,
+    arrows: [
+      // Crown points (5 spikes pointing up)
+      { c: [[2,1]], d: 1 },
+      { c: [[1,4]], d: 1 },
+      { c: [[0,6]], d: 1 },
+      { c: [[1,8]], d: 1 },
+      { c: [[2,11]], d: 1 },
+      // Crown base — long horizontal
+      { c: [[4,1],[4,2],[4,3],[4,4],[4,5],[4,6],[4,7],[4,8],[4,9],[4,10],[4,11]], d: 0 },
+      // Bottom band
+      { c: [[6,2],[6,3],[6,4],[6,5],[6,6],[6,7],[6,8],[6,9],[6,10]], d: 0 },
+      // Side jewels
+      { c: [[8,3]], d: 3 },
+      { c: [[8,6]], d: 3 },
+      { c: [[8,9]], d: 3 },
     ]
   },
 };
