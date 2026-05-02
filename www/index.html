@@ -67,7 +67,7 @@ body.letterboxed canvas{
      generateLevel() so every player sees the same puzzle for level N
      (handcrafted-feel without manually designing 200 boards). Procedural
      generation still runs for level 201+ and for daily/weekly seeds. -->
-<script src="levels-baked.js?v=1777676966"></script>
+<script src="levels-baked.js?v=1777684736"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -1342,16 +1342,27 @@ function generateLevel(lvl,customSeed){
   // less normal now, just a touch harder per step" so we bring the max
   // grid (22×30) closer in by ~20%.
   const p=min(1,Math.pow((lvl-1)/74,.66));
-  // Grid 1.5× finer per user feedback: arrows need more cells to weave
-  // INTO each other's pockets. Was 10×13 → 22×30; now 14×19 → 32×42.
-  // Each cell on screen is ~33% smaller, so snakes look denser without
-  // the arrow-stroke disappearing.
-  const cols=floor(lrp(14,32,p)+.5);
-  const rows=floor(lrp(19,42,p)+.5);
+  // Tutorial override: first 5 levels are deliberately tiny — 3-5 arrows
+  // on a small grid so brand-new players grasp "tap a clear arrow" before
+  // any chain dependency or pattern variety appears. Hand-picked sizes
+  // produce the right "easy onboarding" curve regardless of what the
+  // pow() difficulty formula would give.
+  const TUT_OVERRIDES=[
+    {cols:6,rows:8, maxLen:14, longMin:5},   // lvl 1: ~3-4 arrows
+    {cols:7,rows:10,maxLen:18, longMin:6},   // lvl 2: ~4-5 arrows
+    {cols:8,rows:12,maxLen:22, longMin:7},   // lvl 3: ~5-6 arrows
+    {cols:10,rows:14,maxLen:26,longMin:8},   // lvl 4: ~6-8 arrows
+    {cols:12,rows:16,maxLen:30,longMin:10},  // lvl 5: ~8-10 arrows
+  ];
+  const tut=lvl<=5?TUT_OVERRIDES[lvl-1]:null;
+  // Grid 1.5× finer per user feedback. Tutorial uses the override above;
+  // lvl 6+ uses the smooth ramp.
+  const cols=tut?tut.cols:floor(lrp(14,32,p)+.5);
+  const rows=tut?tut.rows:floor(lrp(19,42,p)+.5);
   const pattern=getLevelPattern(lvl);
   _levelPattern=pattern;
   const minLen=2;
-  const maxLen=floor(lrp(25,108,p)*pattern.lenScale+.5);
+  const maxLen=tut?tut.maxLen:floor(lrp(25,108,p)*pattern.lenScale+.5);
 
   gridCols=cols;gridRows=rows;
 
@@ -1363,7 +1374,9 @@ function generateLevel(lvl,customSeed){
   //   • lateExtra: 0..1 over the same range — used below to scale
   //     longMin DOWN at high levels (shorter required min length =
   //     more arrows per board = more to track per tap)
-  _maxBlockers=1;
+  // Tutorial: NO chain blockers — pure "tap clear arrow" gameplay so
+  // brand-new players grasp the basic rule before any dependencies.
+  _maxBlockers=tut?0:1;
   let numClusters, lateExtra;
   if(lvl<=1500){
     const q=Math.max(0,(lvl-75)/1425);
@@ -1400,8 +1413,10 @@ function generateLevel(lvl,customSeed){
   // arrows per board at lvl 1500+ so there's more to track even
   // though the grid stays maxed.
   let safety=3000;
+  // Tutorial uses fixed longMin from the override table above.
+  // Otherwise the regular ramp scaled by pattern + lateExtra.
   const longMinBase=floor(maxLen*lrp(.55,.70,p)*pattern.longMinScale);
-  const longMin=max(15,floor(longMinBase*max(0.45,1-lateExtra*0.30)));
+  const longMin=tut?tut.longMin:max(15,floor(longMinBase*max(0.45,1-lateExtra*0.30)));
   while(safety-->0){
     const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,{minAcceptLen:longMin});
     if(!arrow)break;
@@ -2224,7 +2239,7 @@ function tapArrowByIndex(idx){
 // wrong taps don't drain hearts and the next solvable arrow is always
 // pulse-highlighted. Daily/weekly are excluded — those are challenges,
 // not introductions.
-const TUTORIAL_LEVELS=3;
+const TUTORIAL_LEVELS=5;
 function isTutorial(){
   return level<=TUTORIAL_LEVELS&&!isDaily&&!isWeekly;
 }

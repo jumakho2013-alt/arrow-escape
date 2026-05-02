@@ -347,16 +347,24 @@ function tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,opts){
 function generateLevel(lvl, customSeed){
   const rng=seededRandom(customSeed!=null?customSeed:(lvl*7919+31337));
   const p=min(1, pow((lvl-1)/74, .66));
-  const cols=floor(lrp(14,32,p)+.5);
-  const rows=floor(lrp(19,42,p)+.5);
+  // Tutorial override: lvls 1-5 use tiny hand-picked grids (3-10 arrows).
+  const TUT_OVERRIDES=[
+    {cols:6,rows:8, maxLen:14, longMin:5},
+    {cols:7,rows:10,maxLen:18, longMin:6},
+    {cols:8,rows:12,maxLen:22, longMin:7},
+    {cols:10,rows:14,maxLen:26,longMin:8},
+    {cols:12,rows:16,maxLen:30,longMin:10},
+  ];
+  const tut=lvl<=5?TUT_OVERRIDES[lvl-1]:null;
+  const cols=tut?tut.cols:floor(lrp(14,32,p)+.5);
+  const rows=tut?tut.rows:floor(lrp(19,42,p)+.5);
   const pattern=getLevelPattern(lvl);
   _levelPattern=pattern;
   const minLen=2;
-  const maxLen=floor(lrp(25,108,p)*pattern.lenScale+.5);
+  const maxLen=tut?tut.maxLen:floor(lrp(25,108,p)*pattern.lenScale+.5);
 
-  // Late-level scaling: clusters 3→12 over 75..1500, then +1 every 25.
-  // `lateExtra` shrinks longMin at high levels for more arrows.
-  _maxBlockers=1;
+  // Tutorial: no chain blockers. Otherwise late-level scaling kicks in.
+  _maxBlockers=tut?0:1;
   let numClusters,lateExtra;
   if(lvl<=1500){
     const q=Math.max(0,(lvl-75)/1425);
@@ -380,7 +388,7 @@ function generateLevel(lvl, customSeed){
   // longMin shrinks at lvl 1500+ for more arrows per board.
   let safety=3000;
   const longMinBase=floor(maxLen*lrp(.55,.70,p)*pattern.longMinScale);
-  const longMin=max(15,floor(longMinBase*max(0.45,1-lateExtra*0.30)));
+  const longMin=tut?tut.longMin:max(15,floor(longMinBase*max(0.45,1-lateExtra*0.30)));
   while(safety-->0){
     const arrow=tryBuildArrow(occ,rows,cols,rng,minLen,maxLen,placed,{minAcceptLen:longMin});
     if(!arrow)break;
