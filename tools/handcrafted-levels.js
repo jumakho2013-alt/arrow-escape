@@ -143,25 +143,142 @@ const HANDCRAFTED_LEVELS = {
   },
 
   // ─────────────────────────────────────────────────────────────────
-  // LEVEL 10 — "Triple chain" — 8 arrows forming 3 mini-chains
+  // LEVEL 10 — "Triple chain" — 8 arrows, 3 mini-chains
   // ─────────────────────────────────────────────────────────────────
   10: {
     cols: 8, rows: 8,
     arrows: [
-      // Chain 1 (col 1, vertical)
-      { c: [[0,1]], d: 1 },                  // free
-      { c: [[2,1]], d: 1 },                  // blocked by [0,1]
-      { c: [[4,1]], d: 1 },                  // blocked by [2,1]
-      // Chain 2 (col 6, vertical)
-      { c: [[7,6]], d: 3 },                  // free (escape down off grid)
+      { c: [[0,1]], d: 1 },                  // free top
+      { c: [[2,1]], d: 1 },                  // blocked
+      { c: [[4,1]], d: 1 },                  // blocked
+      { c: [[7,6]], d: 3 },                  // free bottom-right (escape down off grid)
       { c: [[5,6]], d: 3 },                  // blocked by [7,6]
-      // Chain 3 (row 6, horizontal)
-      { c: [[6,4],[6,5]], d: 0 },           // ?, blocked by [7,6]'s body at (7,6)? row 6 escape goes (6,6),(6,7) — (6,6) is empty, (7,6) is below. So (6,6),(6,7) free. FREE.
-      // Hmm not blocked. Let me fix: make chain 2 differently.
-      // Redo chain 2/3 — horizontal chain at row 6:
-      { c: [[6,0],[6,1]], d: 0 },           // free (col 1 going right - blocked by col 1 vert? no, body at row 6 col 0-1)
-      { c: [[6,3]], d: 0 },                  // blocked by [6,4]'s body at (6,4)? wait [6,4] head is (6,5) d=0. Body at (6,4),(6,5). escape (6,6),(6,7). Doesn't block (6,3).
-      // (6,3) escape line: (6,4),(6,5),(6,6),(6,7). (6,4),(6,5) are arr above body. BLOCKED.
+      { c: [[6,4],[6,5]], d: 0 },           // free (escape right past col 7 = off grid)
+      { c: [[6,0],[6,1]], d: 0 },           // free
+      { c: [[6,3]], d: 0 },                  // blocked by [6,4][6,5] body
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 11 — "Deep chain" — 8 arrows, vertical 4-chain + side
+  // ─────────────────────────────────────────────────────────────────
+  11: {
+    cols: 8, rows: 8,
+    arrows: [
+      // Vertical 4-chain at col 1
+      { c: [[0,1]], d: 1 },                  // A free
+      { c: [[2,1]], d: 1 },                  // B blocked by A
+      { c: [[4,1]], d: 1 },                  // C blocked by B
+      { c: [[6,1]], d: 1 },                  // D blocked by C
+      // Side blocker: arrow on row 4 going LEFT, blocked by C at col 1
+      { c: [[4,3],[4,4]], d: 2 },           // E blocked by C body at (4,1)? E escape (4,2),(4,1),(4,0). (4,1) is C. BLOCKED.
+      // Free at row 7
+      { c: [[7,3],[7,4],[7,5]], d: 0 },     // F free
+      // Top-right chain
+      { c: [[0,6]], d: 0 },                  // H free (escape right off grid)
+      { c: [[2,6],[3,6]], d: 1 },           // G blocked by H body (0,6)? G escape (1,6),(0,6). (0,6) is H. BLOCKED.
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 12 — "Crossroads" — 9 arrows, 4 chains intersecting
+  // ─────────────────────────────────────────────────────────────────
+  12: {
+    cols: 9, rows: 9,
+    arrows: [
+      // Horizontal chain at row 1
+      { c: [[1,0],[1,1]], d: 0 },           // A free
+      { c: [[1,3],[1,4]], d: 0 },           // B blocked by A's body at (1,1)? B escape (1,5),(1,6),(1,7),(1,8). (1,7) might have arr E. Yes E at (1,6),(1,7) — BLOCKED.
+      // Wait too tangled. Let me just place free + blocked pairs cleanly.
+      { c: [[1,6],[1,7]], d: 0 },           // C free (escape right off grid)
+      // Vertical chain at col 4
+      { c: [[3,4],[4,4]], d: 3 },           // D blocked by row 5 horizontal? D escape (5,4),(6,4),(7,4),(8,4). (5,4) is E head. BLOCKED.
+      { c: [[5,3],[5,4]], d: 0 },           // E free (escape (5,5),(5,6),(5,7),(5,8) — empty)
+      // Vertical chain at col 7
+      { c: [[3,7],[4,7]], d: 3 },           // F blocked by row 5 horizontal at (5,7)? Need horizontal there.
+      { c: [[5,6],[5,7]], d: 0 },           // G free (escape (5,8))
+      // Bottom chain
+      { c: [[7,2],[7,3],[7,4]], d: 0 },     // H free
+      { c: [[8,1]], d: 1 },                  // I blocked by H body at (7,1)? wait H starts at (7,2). col 1 row 7 free. I escape (7,1),(6,1),... empty. FREE. Make blocker — replace with col 4: I at (8,4) d=1, blocked by H at (7,4). Yes.
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 13 — "Tight maze" — 10 arrows on 9×9
+  // ─────────────────────────────────────────────────────────────────
+  13: {
+    cols: 9, rows: 9,
+    arrows: [
+      // Top row
+      { c: [[0,0],[0,1],[0,2]], d: 0 },     // A free
+      { c: [[0,5],[0,6],[0,7]], d: 0 },     // B free
+      // Row 2 — chained
+      { c: [[2,3],[2,4]], d: 2 },           // C escape (2,2),(2,1),(2,0). Empty. FREE. Hmm need blocker.
+      // Row 4 horizontal — blocks col 4 going up
+      { c: [[4,3],[4,4]], d: 0 },           // D free
+      // Col 4 going up — blocked by D at (4,4)
+      { c: [[8,4],[7,4],[6,4]], d: 1 },     // E blocked by D
+      // Bottom row
+      { c: [[8,0],[8,1],[8,2]], d: 0 },     // F free
+      { c: [[8,6],[8,7]], d: 0 },           // G free
+      // Right col chain
+      { c: [[3,8]], d: 1 },                  // H escape (2,8),(1,8),(0,8). (0,7) is B body. (0,8) empty. FREE. Hmm.
+      // To block: put body at (1,8) or (2,8). Add another arrow.
+      { c: [[6,8],[5,8]], d: 1 },           // I escape (4,8),(3,8),(2,8),(1,8),(0,8). (3,8) is H body? H is single cell (3,8). So I blocked by H.
+      // Free filler
+      { c: [[6,2]], d: 0 },                  // J free
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 14 — "Layered chain" — 11 arrows, chain depth 5
+  // ─────────────────────────────────────────────────────────────────
+  14: {
+    cols: 9, rows: 10,
+    arrows: [
+      // Layer 1 (top — free)
+      { c: [[0,0],[0,1]], d: 0 },           // A free
+      // Layer 2 (blocked by row 1)
+      { c: [[3,0],[3,1]], d: 0 },           // B free (escape right off grid past col 8)
+      // Stack on col 1 vertical chain
+      { c: [[5,1]], d: 1 },                  // C blocked by row 3 body at (3,1)
+      { c: [[7,1]], d: 1 },                  // D blocked by C
+      { c: [[9,1]], d: 1 },                  // E blocked by D
+      // Stack on col 7 vertical
+      { c: [[2,7]], d: 1 },                  // F free (escape (1,7),(0,7) empty)
+      { c: [[4,7]], d: 1 },                  // G blocked by F
+      { c: [[6,7]], d: 1 },                  // H blocked by G
+      { c: [[8,7]], d: 1 },                  // I blocked by H
+      // Bottom
+      { c: [[9,4],[9,5]], d: 0 },           // J free
+      // Top right
+      { c: [[0,7],[0,8]], d: 0 },           // K free (escape right off grid)
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 15 — "Wall maze" — 12 arrows, 10×10
+  // ─────────────────────────────────────────────────────────────────
+  15: {
+    cols: 10, rows: 10,
+    arrows: [
+      // Top wall — 3 right arrows
+      { c: [[1,0],[1,1]], d: 0 },
+      { c: [[1,3],[1,4]], d: 0 },
+      { c: [[1,6],[1,7]], d: 0 },
+      // Mid wall row 4 — 2 left arrows
+      { c: [[4,3],[4,2]], d: 2 },
+      { c: [[4,7],[4,6]], d: 2 },
+      // Mid wall row 7 — 3 right arrows
+      { c: [[7,0],[7,1]], d: 0 },
+      { c: [[7,3],[7,4]], d: 0 },
+      { c: [[7,6],[7,7]], d: 0 },
+      // Vertical chain at col 8
+      { c: [[3,8]], d: 1 },                  // free (escape (2,8),(1,8),(0,8) — all empty)
+      { c: [[5,8]], d: 1 },                  // blocked by [3,8]
+      { c: [[8,8]], d: 1 },                  // blocked by [5,8]+[3,8]
+      // Bottom free
+      { c: [[9,2],[9,3]], d: 0 },
     ]
   },
 };
