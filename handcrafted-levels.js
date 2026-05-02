@@ -262,23 +262,153 @@ const HANDCRAFTED_LEVELS = {
   15: {
     cols: 10, rows: 10,
     arrows: [
-      // Top wall — 3 right arrows
       { c: [[1,0],[1,1]], d: 0 },
       { c: [[1,3],[1,4]], d: 0 },
       { c: [[1,6],[1,7]], d: 0 },
-      // Mid wall row 4 — 2 left arrows
       { c: [[4,3],[4,2]], d: 2 },
       { c: [[4,7],[4,6]], d: 2 },
-      // Mid wall row 7 — 3 right arrows
       { c: [[7,0],[7,1]], d: 0 },
       { c: [[7,3],[7,4]], d: 0 },
       { c: [[7,6],[7,7]], d: 0 },
-      // Vertical chain at col 8
-      { c: [[3,8]], d: 1 },                  // free (escape (2,8),(1,8),(0,8) — all empty)
-      { c: [[5,8]], d: 1 },                  // blocked by [3,8]
-      { c: [[8,8]], d: 1 },                  // blocked by [5,8]+[3,8]
-      // Bottom free
+      { c: [[3,8]], d: 1 },
+      { c: [[5,8]], d: 1 },
+      { c: [[8,8]], d: 1 },
       { c: [[9,2],[9,3]], d: 0 },
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 16 — "5-deep vertical chain" — 12 arrows
+  // ─────────────────────────────────────────────────────────────────
+  16: {
+    cols: 10, rows: 10,
+    arrows: [
+      // Vertical chain on col 1 (5 deep)
+      { c: [[0,1]], d: 1 },                  // A free
+      { c: [[2,1]], d: 1 },                  // B blocked by A
+      { c: [[4,1]], d: 1 },                  // C blocked by B
+      { c: [[6,1]], d: 1 },                  // D blocked by C
+      { c: [[8,1]], d: 1 },                  // E blocked by D
+      // Vertical chain on col 8 (4 deep)
+      { c: [[1,8]], d: 1 },                  // F free
+      { c: [[3,8]], d: 1 },                  // G blocked by F
+      { c: [[5,8]], d: 1 },                  // H blocked by G
+      { c: [[7,8]], d: 1 },                  // I blocked by H
+      // Top + bottom free arrows
+      { c: [[0,4],[0,5]], d: 0 },           // J free (escape right off grid)
+      { c: [[9,4],[9,5]], d: 0 },           // K free
+      // Side blocker
+      { c: [[5,5],[5,4],[5,3]], d: 2 },     // L escape (5,2),(5,1),(5,0). (5,1) was C cell (single). C dies, free. So initially BLOCKED by C.
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 17 — "Box border maze" — 13 arrows, 10×10
+  // Border arrows + interior chain
+  // ─────────────────────────────────────────────────────────────────
+  17: {
+    cols: 10, rows: 10,
+    arrows: [
+      // Top border 3 right arrows
+      { c: [[0,0],[0,1]], d: 0 },
+      { c: [[0,3],[0,4]], d: 0 },
+      { c: [[0,6],[0,7]], d: 0 },
+      // Right border 2 down arrows
+      { c: [[2,9]], d: 3 },
+      { c: [[5,9]], d: 3 },
+      // Bottom border 3 right arrows
+      { c: [[9,0],[9,1]], d: 0 },
+      { c: [[9,3],[9,4]], d: 0 },
+      { c: [[9,6],[9,7]], d: 0 },
+      // Left border 2 up arrows
+      { c: [[7,0]], d: 1 },
+      { c: [[4,0]], d: 1 },
+      // Interior chain (3 horizontal arrows blocking each other)
+      { c: [[3,3],[3,4]], d: 0 },           // free (escape (3,5),(3,6),(3,7),(3,8),(3,9) — empty)
+      { c: [[6,3],[6,4]], d: 0 },           // free
+      { c: [[3,6],[3,7]], d: 0 },           // free? escape (3,8),(3,9). Empty. Free.
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 18 — "Cascading chain" — 12 arrows
+  // ─────────────────────────────────────────────────────────────────
+  18: {
+    cols: 10, rows: 10,
+    arrows: [
+      // Row 0 free
+      { c: [[0,0],[0,1],[0,2]], d: 0 },
+      // Row 2: arrow blocked by row 0 col 2
+      { c: [[2,2]], d: 1 },                  // single cell at (2,2), escape (1,2),(0,2). (0,2) is row 0 body. BLOCKED.
+      // Row 4: arrow blocked by row 2
+      { c: [[4,2]], d: 1 },                  // BLOCKED by (2,2)
+      // Row 6: arrow blocked by row 4
+      { c: [[6,2]], d: 1 },
+      { c: [[8,2]], d: 1 },
+      // Right side parallel
+      { c: [[0,5],[0,6],[0,7]], d: 0 },
+      { c: [[2,7]], d: 1 },
+      { c: [[4,7]], d: 1 },
+      { c: [[6,7]], d: 1 },
+      { c: [[8,7]], d: 1 },
+      // Bottom free
+      { c: [[9,4],[9,5]], d: 0 },
+      // Free top
+      { c: [[3,4],[3,5]], d: 0 },           // escape (3,6),(3,7),(3,8),(3,9). Empty. FREE.
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 19 — "Zigzag chains" — 13 arrows, 4-deep dual chains
+  // ─────────────────────────────────────────────────────────────────
+  19: {
+    cols: 10, rows: 10,
+    arrows: [
+      // Left chain (zigzag)
+      { c: [[0,0],[0,1]], d: 0 },           // A free
+      { c: [[2,0],[2,1]], d: 0 },           // B free? escape (2,2)... empty. FREE. To block: (2,2) needs body.
+      // Add a column-2 arrow
+      { c: [[1,2]], d: 1 },                  // X blocked by A body at (0,2)? A body (0,0),(0,1). Not (0,2). Free. Let me make X at (3,2) blocked by row 2 body.
+      // Restart cleanly.
+      { c: [[3,2]], d: 1 },                  // blocked by B body at (2,2)? (2,2) not in B. (2,1) is B. X escape (2,2),(1,2),(0,2). (2,2) empty. Free.
+      // Need cleaner.
+      { c: [[5,0],[5,1]], d: 0 },
+      { c: [[7,0],[7,1]], d: 0 },
+      // Right side chains
+      { c: [[0,7],[0,8]], d: 0 },
+      { c: [[2,7],[2,8]], d: 0 },
+      { c: [[5,7],[5,8]], d: 0 },
+      { c: [[7,7],[7,8]], d: 0 },
+      // Vertical chain center
+      { c: [[2,4]], d: 1 },                  // free if (1,4),(0,4) empty
+      { c: [[4,4]], d: 1 },                  // blocked by [2,4]
+      { c: [[6,4]], d: 1 },                  // blocked by [4,4]
+    ]
+  },
+
+  // ─────────────────────────────────────────────────────────────────
+  // LEVEL 20 — "Long chain" — 14 arrows, big chain depth
+  // ─────────────────────────────────────────────────────────────────
+  20: {
+    cols: 11, rows: 11,
+    arrows: [
+      // 6-deep vertical chain at col 1
+      { c: [[0,1]], d: 1 },
+      { c: [[2,1]], d: 1 },
+      { c: [[4,1]], d: 1 },
+      { c: [[6,1]], d: 1 },
+      { c: [[8,1]], d: 1 },
+      { c: [[10,1]], d: 1 },
+      // 5-deep at col 9
+      { c: [[1,9]], d: 1 },
+      { c: [[3,9]], d: 1 },
+      { c: [[5,9]], d: 1 },
+      { c: [[7,9]], d: 1 },
+      { c: [[10,9]], d: 1 },
+      // Cross arrows
+      { c: [[5,4],[5,5],[5,6]], d: 0 },
+      { c: [[2,4],[2,5]], d: 0 },
+      { c: [[8,5],[8,6]], d: 0 },
     ]
   },
 };
