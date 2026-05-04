@@ -71,7 +71,7 @@ body.letterboxed canvas{
 <!-- Handcrafted milestone levels — tutorial (1-10) plus picture/showcase
      levels at key milestones. These take priority over procedural / baked
      when their level number matches. -->
-<script src="handcrafted-levels.js?v=1"></script>
+<script src="handcrafted-levels.js?v=23"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -883,6 +883,11 @@ let coins=localStorage.getItem('ae_coins')!=null?(+localStorage.getItem('ae_coin
 // head escapes in the direction `dir`
 let arrows=[];
 let gridCols=4,gridRows=4;
+// Fixed "stage" — large dot field that stays the same shape for every level.
+// Each level's smaller maze is centered inside the stage; surrounding cells
+// render as background dots only. Cells shrink to fit the stage, so as levels
+// grow they fill more of the stage rather than redrawing the whole field.
+const STAGE_COLS=16, STAGE_ROWS=22;
 let moves=0,minMoves=0;
 let timer=0;
 let undosLeft=3;
@@ -2278,10 +2283,17 @@ function spawnConfetti(){
 // ================================================================
 //  GRID HELPERS
 // ================================================================
-// Grid fills almost the entire screen width. Minimal 8px padding per side.
-function getCellSize(){return min((W-16)/gridCols,(H*.70)/gridRows)}
-function getGridX(){return(W-gridCols*getCellSize())/2}
-function getGridY(){return H*.15} // grid below the title row at TOP_Y=75 + stars at TOP_Y+22
+// Cell size is sized to fit the fixed STAGE field (not the per-level grid).
+// Stage stays the same on every level → cell size is constant; small levels
+// just sit inside a sea of background dots. Cells ~12% smaller than before
+// to match competitor dot-grid look.
+function _stageC(){return max(STAGE_COLS,gridCols)}
+function _stageR(){return max(STAGE_ROWS,gridRows)}
+function getCellSize(){return min((W-32)/_stageC(),(H*.62)/_stageR())}
+function getStageX(){return(W-_stageC()*getCellSize())/2}
+function getStageY(){return H*.15}
+function getGridX(){return getStageX()+floor((_stageC()-gridCols)/2)*getCellSize()}
+function getGridY(){return getStageY()+floor((_stageR()-gridRows)/2)*getCellSize()}
 
 // ================================================================
 //  DRAWING HELPERS
@@ -2347,13 +2359,11 @@ function getPathSegment(path,sFrom,sTo){
 function drawArrowPolyline(pts,sz,col,alpha){
   if(pts.length<2)return;
   // Thin lines scaled to cell size. Min 2px keeps lines visible at tiny cells.
-  // Stroke / arrowhead sizing. Bumped from .10/.32/.22 to .14/.34/.26 so
-  // the lines read as fat "ropes" the way competitor games (Arrow Jam Go,
-  // Arrows Escape Puzzle) draw them — the previous thin stroke looked
-  // sketchy next to a dense-fill grid. Min stroke 2px so very small cells
-  // on max-density boards don't disappear into hairlines.
-  const thick=max(2,sz*.14);
-  const headL=sz*.34,headW=sz*.26;
+  // Per competitor reference screenshots (Arrow Jam Go, Arrows Escape):
+  // arrows visually fill ~25-30% of cell width so adjacent snakes form
+  // contiguous-looking maze walls. Bumped .14 → .28.
+  const thick=max(3,sz*.28);
+  const headL=sz*.42,headW=sz*.36;
 
   X.save();
   X.globalAlpha=alpha==null?1:alpha;
@@ -2859,9 +2869,11 @@ function drawPlay(){
   // cells expose it.
   X.fillStyle=darkMode?'rgba(255,255,255,.10)':'rgba(0,0,0,.10)';
   const _dotR=max(1,cs*.06);
-  for(let r=0;r<gridRows;r++){
-    for(let c=0;c<gridCols;c++){
-      const cx=gx+c*cs+cs/2,cy=gy+r*cs+cs/2;
+  const _sx=getStageX(),_sy=getStageY();
+  const _SC=_stageC(),_SR=_stageR();
+  for(let r=0;r<_SR;r++){
+    for(let c=0;c<_SC;c++){
+      const cx=_sx+c*cs+cs/2,cy=_sy+r*cs+cs/2;
       X.beginPath();X.arc(cx,cy,_dotR,0,TAU);X.fill();
     }
   }
