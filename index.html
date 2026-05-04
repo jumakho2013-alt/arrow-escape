@@ -2234,7 +2234,7 @@ function tapArrowByIndex(idx){
       // every frame in drawPlay so the player feels the level "click closed"
       // before the complete screen arrives.
       const head=a.cells[a.cells.length-1];
-      _winWave={x:gx+head[1]*cs+cs/2,y:gy+head[0]*cs+cs/2,t:0,dur:1.1};
+      _winWave={x:gx+head[1]*cs+cs/2,y:gy+head[0]*cs+cs/2,t:0,dur:1.6};
       setTimeout(()=>{
         inputLocked=false;
         S='complete';
@@ -2277,7 +2277,7 @@ function tapArrowByIndex(idx){
         });
         save();
         spawnConfetti();
-      },1100);
+      },1600);
     }
   }else{
     // Blocked — shake the head cell, lose a heart (life)
@@ -2984,10 +2984,11 @@ function drawPlay(){
       const d=Math.sqrt(dx*dx+dy*dy);
       const arriveP=d/_waveSpeed;
       // Each dot's local "wave time" is a 0..1 window centred on the
-      // wave front passing through it. Bell curve (sin(πx)) gives a
-      // smooth swell+settle.
-      const wlocal=(_waveP-arriveP)/0.20; // 0..1 over 20% of total dur
-      if(wlocal>0&&wlocal<1)scale=1+Math.sin(wlocal*PI)*0.9;
+      // wave front passing through it. Bell curve (sin(πx)) makes the
+      // dot deflate down to ~30% then settle back — looks like the
+      // dot is briefly "pushed in" by a passing pulse.
+      const wlocal=(_waveP-arriveP)/0.18; // 0..1 over 18% of total dur
+      if(wlocal>0&&wlocal<1)scale=1-Math.sin(wlocal*PI)*0.7;
     }
     X.beginPath();X.arc(cx,cy,_dotR*scale,0,TAU);X.fill();
   }
