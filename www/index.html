@@ -2429,8 +2429,8 @@ function drawArrowPolyline(pts,sz,col,alpha){
   // Per competitor reference screenshots (Arrow Jam Go, Arrows Escape):
   // arrows visually fill ~25-30% of cell width so adjacent snakes form
   // contiguous-looking maze walls. Bumped .14 → .28.
-  const thick=max(3,sz*.28);
-  const headL=sz*.42,headW=sz*.36;
+  const thick=max(2.5,sz*.22);
+  const headL=sz*.38,headW=sz*.32;
 
   X.save();
   X.globalAlpha=alpha==null?1:alpha;
