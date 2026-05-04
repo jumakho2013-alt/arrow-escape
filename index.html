@@ -495,9 +495,10 @@ function _autoFitZoom(){
 // stage (including STAGE_PAD breathing room) is visible at once.
 function _startZoomIntro(){
   _zoomTarget=_autoFitZoom();
-  // Pick a start that's clearly wider than target — clamped so we don't
-  // shrink past MIN_ZOOM. 0.55× of the auto-fit feels like a natural pull-in.
-  _zoomFrom=max(MIN_ZOOM, _zoomTarget*0.55);
+  // Start a bit closer than before (0.55 → 0.75) so the player isn't
+  // shown a full birds-eye that loses the puzzle structure — just a hint
+  // of room before settling at the playable zoom.
+  _zoomFrom=max(MIN_ZOOM, _zoomTarget*0.75);
   zoomLevel=_zoomFrom;
   _zoomIntroT=0;
 }
@@ -2233,7 +2234,7 @@ function tapArrowByIndex(idx){
       // every frame in drawPlay so the player feels the level "click closed"
       // before the complete screen arrives.
       const head=a.cells[a.cells.length-1];
-      _winWave={x:gx+head[1]*cs+cs/2,y:gy+head[0]*cs+cs/2,t:0,dur:.7};
+      _winWave={x:gx+head[1]*cs+cs/2,y:gy+head[0]*cs+cs/2,t:0,dur:1.1};
       setTimeout(()=>{
         inputLocked=false;
         S='complete';
@@ -2276,7 +2277,7 @@ function tapArrowByIndex(idx){
         });
         save();
         spawnConfetti();
-      },700);
+      },1100);
     }
   }else{
     // Blocked — shake the head cell, lose a heart (life)
@@ -2352,7 +2353,7 @@ function spawnConfetti(){
 // Stage extends a few cells past the level on every side so the player has
 // room to pan/look around. The dot field rendered earlier is the level's
 // occupied cells only — these stage paddings are pure breathing room.
-const STAGE_PAD=4;
+const STAGE_PAD=2;
 function _stageC(){return max(STAGE_COLS,gridCols+STAGE_PAD*2)}
 function _stageR(){return max(STAGE_ROWS,gridRows+STAGE_PAD*2)}
 function getCellSize(){return min((W-32)/_stageC(),(H*.58)/_stageR())}
@@ -2957,39 +2958,38 @@ function drawPlay(){
   // visible after arrows clear (graph-paper aesthetic per audit + competitor
   // reference). Drawn before arrows so live cells overlap the dot but cleared
   // cells expose it.
+  // Dot grid — drawn per-cell so the win wave can pulse each dot's radius
+  // based on its distance from the wave origin (replaces the old ring
+  // ripple per user request: dots themselves swell briefly and settle).
   X.fillStyle=darkMode?'rgba(255,255,255,.10)':'rgba(0,0,0,.10)';
   const _dotR=max(1,cs*.06);
+  const _hasWave=!!_winWave;
+  let _waveP=0,_waveX=0,_waveY=0,_waveSpeed=0;
+  if(_hasWave){
+    _winWave.t+=dt;
+    _waveP=_winWave.t/_winWave.dur;
+    _waveX=_winWave.x;_waveY=_winWave.y;
+    // Wave front travels far enough to reach screen corners by p=1.
+    _waveSpeed=max(W,H)*1.1;
+    if(_waveP>=1)_winWave=null;
+  }
   for(const k of _levelCells){
     const i=k.indexOf(',');
     const r=+k.slice(0,i),c=+k.slice(i+1);
     const cx=gx+c*cs+cs/2,cy=gy+r*cs+cs/2;
-    X.beginPath();X.arc(cx,cy,_dotR,0,TAU);X.fill();
-  }
-
-  // Win ripple — three concentric expanding rings on top of the dots.
-  if(_winWave){
-    _winWave.t+=dt;
-    const p=_winWave.t/_winWave.dur;
-    if(p>=1){_winWave=null;}
-    else{
-      X.save();
-      X.lineCap='round';
-      const maxR=max(W,H)*0.7;
-      for(let i=0;i<3;i++){
-        const off=i*0.18;
-        const lp=clp(p-off,0,1);
-        if(lp<=0)continue;
-        const e=1-Math.pow(1-lp,2); // easeOutQuad — ring decelerates as it spreads
-        const radius=maxR*e;
-        const a=clp(1-lp,0,1)*0.55;
-        X.globalAlpha=a;
-        X.strokeStyle=darkMode?'rgba(255,255,255,1)':'rgba(80,60,30,1)';
-        X.lineWidth=max(2,cs*.12)*(1-lp*.6);
-        X.beginPath();X.arc(_winWave.x,_winWave.y,radius,0,TAU);X.stroke();
-      }
-      X.globalAlpha=1;
-      X.restore();
+    let scale=1;
+    if(_hasWave){
+      // Distance from wave origin → time for the front to arrive at this dot.
+      const dx=cx-_waveX,dy=cy-_waveY;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      const arriveP=d/_waveSpeed;
+      // Each dot's local "wave time" is a 0..1 window centred on the
+      // wave front passing through it. Bell curve (sin(πx)) gives a
+      // smooth swell+settle.
+      const wlocal=(_waveP-arriveP)/0.20; // 0..1 over 20% of total dur
+      if(wlocal>0&&wlocal<1)scale=1+Math.sin(wlocal*PI)*0.9;
     }
+    X.beginPath();X.arc(cx,cy,_dotR*scale,0,TAU);X.fill();
   }
 
   // Draw all alive arrows as continuous paths through their cells
@@ -3083,10 +3083,42 @@ function drawPlay(){
       X.closePath();X.fill();
       X.globalAlpha=1;
 
+      // Finger pointer — animated taps over the suggested arrow's head.
+      // 1.4s loop: hover (scale=1) → tap (scale=0.78) → release (scale=1)
+      // with a fading ring on the down-stroke. Reads like a real demo without
+      // freezing the player out of the game (they can still tap whenever).
+      const tapCycle=1.4;
+      const tt=(gt%tapCycle)/tapCycle; // 0..1
+      // Down-stroke 0..0.25, hold 0.25..0.4, release 0.4..0.55, idle 0.55..1
+      let tapScale=1;
+      let ringP=-1;
+      if(tt<0.25){tapScale=1-(tt/0.25)*0.22;ringP=tt/0.25;}
+      else if(tt<0.40){tapScale=0.78;ringP=1;}
+      else if(tt<0.55){tapScale=0.78+((tt-0.40)/0.15)*0.22;}
+      const fX=hx,fY=hy;
+      // Tap ring: expanding circle that fades, only during the press window.
+      if(ringP>=0){
+        X.save();
+        X.globalAlpha=(1-ringP)*0.6;
+        X.strokeStyle=TH.star;
+        X.lineWidth=2;
+        X.beginPath();X.arc(fX,fY,cs*0.4+ringP*cs*0.5,0,TAU);X.stroke();
+        X.restore();
+      }
+      // Pointer body — a soft dark circle (the "fingertip") with a smaller
+      // bright dot (the touch point). Offset slightly down-right so it
+      // doesn't sit dead-centre on the arrow head it's pointing at.
+      X.save();
+      X.translate(fX+cs*0.12,fY+cs*0.12);
+      X.scale(tapScale,tapScale);
+      X.globalAlpha=0.85;
+      X.fillStyle=darkMode?'rgba(255,255,255,.92)':'rgba(40,30,20,.85)';
+      X.beginPath();X.arc(0,0,cs*0.32,0,TAU);X.fill();
+      X.fillStyle=TH.accent;
+      X.beginPath();X.arc(0,0,cs*0.18,0,TAU);X.fill();
+      X.restore();
+
       // Text — only at start of level so it doesn't keep nagging.
-      // Positioned BELOW the stars row (which sits at TOP_Y+22) so the
-      // hint copy doesn't collide with the level title or stars on
-      // tutorial levels — bug visible on level 1/2 in v1.0.14.
       if(moves===0){
         txt('Tap this arrow',W/2,TOP_Y+44,14,TH.star,'center','700');
         txt('It has a clear path to the edge',W/2,TOP_Y+62,11,darkMode?'#aaa':'#666');
