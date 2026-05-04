@@ -920,7 +920,7 @@ let _levelCells=new Set();
 // Each level's smaller maze is centered inside the stage; surrounding cells
 // render as background dots only. Cells shrink to fit the stage, so as levels
 // grow they fill more of the stage rather than redrawing the whole field.
-const STAGE_COLS=16, STAGE_ROWS=22;
+const STAGE_COLS=10, STAGE_ROWS=14;
 let moves=0,minMoves=0;
 let timer=0;
 let undosLeft=3;
@@ -2353,7 +2353,7 @@ function spawnConfetti(){
 // Stage extends a few cells past the level on every side so the player has
 // room to pan/look around. The dot field rendered earlier is the level's
 // occupied cells only — these stage paddings are pure breathing room.
-const STAGE_PAD=2;
+const STAGE_PAD=0;
 function _stageC(){return max(STAGE_COLS,gridCols+STAGE_PAD*2)}
 function _stageR(){return max(STAGE_ROWS,gridRows+STAGE_PAD*2)}
 function getCellSize(){return min((W-32)/_stageC(),(H*.58)/_stageR())}
