@@ -2185,7 +2185,9 @@ function tapArrowByIndex(idx){
     anims.push({
       arrow:a,
       dir:a.dir,
-      t:0,dur:1.2,
+      // Snappier exit (was 1.2s — felt sluggish vs competitor arrowsgo where
+      // arrows shoot off in ~0.5s, giving the game its "kinetic" feel).
+      t:0,dur:.55,
       col:arrowColor(a,idx),cs,gx,gy,
       bodyLen,totalDist:bodyLen+extLen,
       path,
@@ -2239,7 +2241,7 @@ function tapArrowByIndex(idx){
         });
         save();
         spawnConfetti();
-      },400);
+      },700);
     }
   }else{
     // Blocked — shake the head cell, lose a heart (life)
@@ -2281,14 +2283,26 @@ function isTutorial(){
 function spawnConfetti(){
   confetti=[];
   if(reducedMotion)return; // celebration confetti is purely decorative
-  const colors=[TH.accent,TH.success,TH.star,TH.warning,'#c468a0','#68b89c'];
-  for(let i=0;i<35;i++){
+  const colors=[TH.accent,TH.success,TH.star,TH.warning,'#c468a0','#68b89c','#e9b04d','#7a8cc7'];
+  // Two-burst pattern: a wide overhead shower + an upward fountain from the
+  // check mark, so the screen reads as a real celebration instead of a sparse
+  // sprinkle.
+  for(let i=0;i<70;i++){
     confetti.push({
-      x:W/2+rnd(-80,80),y:H*.35+rnd(-20,20),
-      vx:rnd(-3,3),vy:rnd(-6,-1),
-      sz:rnd(3,7),rot:rnd(0,TAU),rv:rnd(-5,5),
+      x:W/2+rnd(-W/2,W/2),y:-10+rnd(-30,0),
+      vx:rnd(-2,2),vy:rnd(1,4),
+      sz:rnd(4,9),rot:rnd(0,TAU),rv:rnd(-6,6),
       col:colors[floor(rnd(0,colors.length))],
-      life:1.5+rnd(0,1),shape:rnd()>.5?0:1 // 0=rect, 1=circle
+      life:2+rnd(0,1.5),shape:floor(rnd(0,3)) // 0=rect, 1=circle, 2=triangle
+    });
+  }
+  for(let i=0;i<40;i++){
+    confetti.push({
+      x:W/2+rnd(-30,30),y:H*.18+rnd(-10,10),
+      vx:rnd(-5,5),vy:rnd(-9,-3),
+      sz:rnd(3,7),rot:rnd(0,TAU),rv:rnd(-8,8),
+      col:colors[floor(rnd(0,colors.length))],
+      life:1.5+rnd(0,1),shape:floor(rnd(0,3))
     });
   }
 }
@@ -3101,8 +3115,9 @@ function drawComplete(){
     X.globalAlpha=clp(p.life,0,1);
     X.fillStyle=p.col;
     X.save();X.translate(p.x,p.y);X.rotate(p.rot);
-    if(p.shape===0)X.fillRect(-p.sz/2,-p.sz/2,p.sz,p.sz*.6);
-    else{X.beginPath();X.arc(0,0,p.sz/2,0,TAU);X.fill()}
+    if(p.shape===0){X.fillRect(-p.sz/2,-p.sz/2,p.sz,p.sz*.6);}
+    else if(p.shape===1){X.beginPath();X.arc(0,0,p.sz/2,0,TAU);X.fill();}
+    else{X.beginPath();X.moveTo(0,-p.sz/2);X.lineTo(p.sz/2,p.sz/2);X.lineTo(-p.sz/2,p.sz/2);X.closePath();X.fill();}
     X.restore();
     X.globalAlpha=1;
   }
