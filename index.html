@@ -71,7 +71,7 @@ body.letterboxed canvas{
 <!-- Handcrafted milestone levels — tutorial (1-10) plus picture/showcase
      levels at key milestones. These take priority over procedural / baked
      when their level number matches. -->
-<script src="handcrafted-levels.js?v=23"></script>
+<script src="handcrafted-levels.js?v=24"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -474,7 +474,17 @@ let lastClick=null; // {x,y,t} for button press scale feedback
 
 // Zoom state (Play screen only, reset on each generateLevel)
 let zoomLevel=1, panX=0, panY=0;
-const MIN_ZOOM=1, MAX_ZOOM=2.5;
+const MIN_ZOOM=1, MAX_ZOOM=4;
+// Target on-screen cell size in CSS px. When a fresh level loads with cells
+// smaller than this (big imported levels on a phone), we auto-zoom so the
+// arrows are tappable without manual pinch. Capped at 1.7× so the player
+// still sees most of the maze without panning.
+const AUTO_ZOOM_TARGET_PX=20, AUTO_ZOOM_CAP=1.7;
+function _autoFitZoom(){
+  const cs=getCellSize();
+  if(cs>=AUTO_ZOOM_TARGET_PX)return 1;
+  return min(AUTO_ZOOM_CAP, AUTO_ZOOM_TARGET_PX/cs);
+}
 
 // Pinch state — set on 2-finger touchstart, cleared on touchend.
 let _pinchStartDist=0;
@@ -1314,9 +1324,9 @@ function generateLevel(lvl,customSeed){
   hintArrow=-1;hintTime=0;wrongTapsInLevel=0;
   hintUsedThisLevel=false;
   levelRevealT=0;
-  // Reset pinch/pan state — every new level starts at the default 1× zoom
-  // so the player isn't stuck inside a tight zoom from the previous level.
-  zoomLevel=1;panX=0;panY=0;_pinchStartDist=0;_panStart=null;
+  // Reset pinch/pan state. zoomLevel gets set after gridCols/gridRows are
+  // known (auto-fit so big levels render at tappable cell size).
+  panX=0;panY=0;_pinchStartDist=0;_panStart=null;
   updateStreak();
 
   // Handcrafted fast path: I designed specific levels by hand (tutorial
@@ -1330,6 +1340,7 @@ function generateLevel(lvl,customSeed){
     arrows=hc.arrows.map(a=>({cells:a.c.map(c=>[c[0],c[1]]),dir:a.d,alive:true}));
     minMoves=arrows.length;
     moves=0;timer=0;undosLeft=3;
+    zoomLevel=_autoFitZoom();
     const key='ae_best_'+lvl;
     bestTime=+localStorage.getItem(key)||0;
     return;
@@ -1346,6 +1357,7 @@ function generateLevel(lvl,customSeed){
       arrows=baked.arrows.map(a=>({cells:a.c.map(c=>[c[0],c[1]]),dir:a.d,alive:true}));
       minMoves=arrows.length;
       moves=0;timer=0;undosLeft=3;
+      zoomLevel=_autoFitZoom();
       const key='ae_best_'+lvl;
       bestTime=+localStorage.getItem(key)||0;
       return;
@@ -1729,6 +1741,7 @@ function generateLevel(lvl,customSeed){
   moves=0;
   timer=0;
   undosLeft=3;
+  zoomLevel=_autoFitZoom();
 
   const key='ae_best_'+lvl;
   bestTime=+localStorage.getItem(key)||0;
