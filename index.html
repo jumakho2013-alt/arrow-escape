@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://*.googleapis.com https://*.doubleclick.net https://*.googlesyndication.com; media-src 'self';">
 <title>Stray Arrows</title>
 <!-- Initialize theme-color synchronously before paint, based on the stored
      theme preference, so the status bar doesn't flash dark→light (or vice
@@ -71,7 +72,7 @@ body.letterboxed canvas{
 <!-- Handcrafted milestone levels — tutorial (1-10) plus picture/showcase
      levels at key milestones. These take priority over procedural / baked
      when their level number matches. -->
-<script src="handcrafted-levels.js?v=1"></script>
+<script src="handcrafted-levels.js?v=25"></script>
 <script>
 // Surface any uncaught error visibly — without this a JS error gives a blank
 // white screen with no clue. Persists in localStorage for post-mortem.
@@ -118,7 +119,7 @@ const C=document.getElementById('c'),X=C.getContext('2d');
 const W=390,H=844;
 // Single source of truth for the displayed app version. Bump alongside
 // CFBundleShortVersionString in ios/App/App.xcodeproj/project.pbxproj.
-const APP_VERSION='v1.0.14';
+const APP_VERSION='v1.0.15';
 // App Store deep link — used by the in-app "update available" nudge.
 const APP_STORE_URL='https://apps.apple.com/app/stray-arrows/id6763406927';
 const PI=Math.PI,TAU=PI*2,sin=Math.sin,cos=Math.cos,abs=Math.abs,floor=Math.floor,min=Math.min,max=Math.max,sqrt=Math.sqrt;
@@ -474,7 +475,34 @@ let lastClick=null; // {x,y,t} for button press scale feedback
 
 // Zoom state (Play screen only, reset on each generateLevel)
 let zoomLevel=1, panX=0, panY=0;
-const MIN_ZOOM=1, MAX_ZOOM=2.5;
+const MIN_ZOOM=0.4, MAX_ZOOM=4;
+// Intro zoom animation. On level start we set zoomLevel=startZoom (a wide
+// view of the stage including padding) and animate toward _zoomTarget over
+// _zoomIntroDur seconds — gives the player a sense of scale before the
+// puzzle settles into its playable view.
+let _zoomFrom=1, _zoomTarget=1, _zoomIntroT=0, _zoomIntroDur=0.65;
+// Target on-screen cell size in CSS px. When a fresh level loads with cells
+// smaller than this (big imported levels on a phone), we auto-zoom so the
+// arrows are tappable without manual pinch. Capped at 1.7× so the player
+// still sees most of the maze without panning.
+const AUTO_ZOOM_TARGET_PX=14, AUTO_ZOOM_CAP=1.3;
+function _autoFitZoom(){
+  const cs=getCellSize();
+  if(cs>=AUTO_ZOOM_TARGET_PX)return 1;
+  return min(AUTO_ZOOM_CAP, AUTO_ZOOM_TARGET_PX/cs);
+}
+// Set up the level-start zoom intro: begin at a wide view, animate to the
+// auto-fit zoom over _zoomIntroDur. The "start" zoom is chosen so the entire
+// stage (including STAGE_PAD breathing room) is visible at once.
+function _startZoomIntro(){
+  _zoomTarget=_autoFitZoom();
+  // Start a bit closer than before (0.55 → 0.75) so the player isn't
+  // shown a full birds-eye that loses the puzzle structure — just a hint
+  // of room before settling at the playable zoom.
+  _zoomFrom=max(MIN_ZOOM, _zoomTarget*0.75);
+  zoomLevel=_zoomFrom;
+  _zoomIntroT=0;
+}
 
 // Pinch state — set on 2-finger touchstart, cleared on touchend.
 let _pinchStartDist=0;
@@ -579,6 +607,7 @@ C.addEventListener('mouseup',e=>{
 C.addEventListener('wheel',e=>{
   if(!(e.ctrlKey||e.metaKey))return;
   e.preventDefault();
+  _zoomIntroT=1; // user took control — kill the intro lerp
   zoomLevel=clp(zoomLevel-e.deltaY*.005,MIN_ZOOM,MAX_ZOOM);
   _clampPan();
 },{passive:false});
@@ -597,6 +626,7 @@ C.addEventListener('touchstart',e=>{
     // behavior — same as Maps, Photos).
     const p1=_gpTouch(e.touches[0]),p2=_gpTouch(e.touches[1]);
     _pinchStartDist=Math.hypot(p2.x-p1.x,p2.y-p1.y);
+    _zoomIntroT=1; // user took control — kill the intro lerp
     _pinchStartZoom=zoomLevel;
     const midX=(p1.x+p2.x)/2,midY=(p1.y+p2.y)/2;
     _pinchStartMid={x:midX,y:midY};
@@ -883,6 +913,15 @@ let coins=localStorage.getItem('ae_coins')!=null?(+localStorage.getItem('ae_coin
 // head escapes in the direction `dir`
 let arrows=[];
 let gridCols=4,gridRows=4;
+// Set of "r,c" strings for every cell any arrow occupies in this level.
+// Background dots are drawn only on these cells (matches arrowsgo aesthetic
+// — no dot mat in empty regions). Recomputed on each generateLevel.
+let _levelCells=new Set();
+// Fixed "stage" — large dot field that stays the same shape for every level.
+// Each level's smaller maze is centered inside the stage; surrounding cells
+// render as background dots only. Cells shrink to fit the stage, so as levels
+// grow they fill more of the stage rather than redrawing the whole field.
+const STAGE_COLS=10, STAGE_ROWS=14;
 let moves=0,minMoves=0;
 let timer=0;
 let undosLeft=3;
@@ -893,6 +932,9 @@ let lastGained=0;
 let anims=[]; // flying arrow animations
 let shakeAnims=[]; // blocked shake animations
 let confetti=[]; // completion confetti
+// Win ripple — a soft expanding ring from the last-cleared arrow's head
+// before the complete screen lands. Adds a "drop in water" beat to the win.
+let _winWave=null;
 let gt=0; // game time (seconds since boot)
 // Frame delta in seconds. Set by loop() every frame. Module-level so draw
 // helpers and animation update code can advance time-based values without
@@ -1309,9 +1351,11 @@ function generateLevel(lvl,customSeed){
   hintArrow=-1;hintTime=0;wrongTapsInLevel=0;
   hintUsedThisLevel=false;
   levelRevealT=0;
-  // Reset pinch/pan state — every new level starts at the default 1× zoom
-  // so the player isn't stuck inside a tight zoom from the previous level.
-  zoomLevel=1;panX=0;panY=0;_pinchStartDist=0;_panStart=null;
+  // Reset pinch/pan state. zoomLevel gets set after gridCols/gridRows are
+  // known (auto-fit so big levels render at tappable cell size).
+  panX=0;panY=0;_pinchStartDist=0;_panStart=null;
+  _levelCells=new Set();
+  function _recordCells(){for(const a of arrows)for(const [r,c] of a.cells)_levelCells.add(r+','+c);}
   updateStreak();
 
   // Handcrafted fast path: I designed specific levels by hand (tutorial
@@ -1323,8 +1367,10 @@ function generateLevel(lvl,customSeed){
     const hc=window.HANDCRAFTED_LEVELS[lvl];
     gridCols=hc.cols;gridRows=hc.rows;
     arrows=hc.arrows.map(a=>({cells:a.c.map(c=>[c[0],c[1]]),dir:a.d,alive:true}));
+    _recordCells();
     minMoves=arrows.length;
     moves=0;timer=0;undosLeft=3;
+    _startZoomIntro();
     const key='ae_best_'+lvl;
     bestTime=+localStorage.getItem(key)||0;
     return;
@@ -1339,8 +1385,10 @@ function generateLevel(lvl,customSeed){
     if(baked){
       gridCols=baked.cols;gridRows=baked.rows;
       arrows=baked.arrows.map(a=>({cells:a.c.map(c=>[c[0],c[1]]),dir:a.d,alive:true}));
+      _recordCells();
       minMoves=arrows.length;
       moves=0;timer=0;undosLeft=3;
+      _startZoomIntro();
       const key='ae_best_'+lvl;
       bestTime=+localStorage.getItem(key)||0;
       return;
@@ -1719,11 +1767,13 @@ function generateLevel(lvl,customSeed){
   // Reverse so arrows[0] = first solved
   arrows=placed.reverse();
   for(const a of arrows)a.alive=true;
+  _recordCells();
 
   minMoves=arrows.length;
   moves=0;
   timer=0;
   undosLeft=3;
+  _startZoomIntro();
 
   const key='ae_best_'+lvl;
   bestTime=+localStorage.getItem(key)||0;
@@ -2167,7 +2217,9 @@ function tapArrowByIndex(idx){
     anims.push({
       arrow:a,
       dir:a.dir,
-      t:0,dur:1.2,
+      // Snappier exit (was 1.2s — felt sluggish vs competitor arrowsgo where
+      // arrows shoot off in ~0.5s, giving the game its "kinetic" feel).
+      t:0,dur:.55,
       col:arrowColor(a,idx),cs,gx,gy,
       bodyLen,totalDist:bodyLen+extLen,
       path,
@@ -2179,6 +2231,11 @@ function tapArrowByIndex(idx){
     for(const ar of arrows)if(ar.alive){allGone=false;break}
     if(allGone){
       inputLocked=true;
+      // Drop-in-water ripple from the last-cleared arrow's head, animated
+      // every frame in drawPlay so the player feels the level "click closed"
+      // before the complete screen arrives.
+      const head=a.cells[a.cells.length-1];
+      _winWave={x:gx+head[1]*cs+cs/2,y:gy+head[0]*cs+cs/2,t:0,dur:1.6};
       setTimeout(()=>{
         inputLocked=false;
         S='complete';
@@ -2221,7 +2278,7 @@ function tapArrowByIndex(idx){
         });
         save();
         spawnConfetti();
-      },400);
+      },1600);
     }
   }else{
     // Blocked — shake the head cell, lose a heart (life)
@@ -2263,14 +2320,26 @@ function isTutorial(){
 function spawnConfetti(){
   confetti=[];
   if(reducedMotion)return; // celebration confetti is purely decorative
-  const colors=[TH.accent,TH.success,TH.star,TH.warning,'#c468a0','#68b89c'];
-  for(let i=0;i<35;i++){
+  const colors=[TH.accent,TH.success,TH.star,TH.warning,'#c468a0','#68b89c','#e9b04d','#7a8cc7'];
+  // Two-burst pattern: a wide overhead shower + an upward fountain from the
+  // check mark, so the screen reads as a real celebration instead of a sparse
+  // sprinkle.
+  for(let i=0;i<70;i++){
     confetti.push({
-      x:W/2+rnd(-80,80),y:H*.35+rnd(-20,20),
-      vx:rnd(-3,3),vy:rnd(-6,-1),
-      sz:rnd(3,7),rot:rnd(0,TAU),rv:rnd(-5,5),
+      x:W/2+rnd(-W/2,W/2),y:-10+rnd(-30,0),
+      vx:rnd(-2,2),vy:rnd(1,4),
+      sz:rnd(4,9),rot:rnd(0,TAU),rv:rnd(-6,6),
       col:colors[floor(rnd(0,colors.length))],
-      life:1.5+rnd(0,1),shape:rnd()>.5?0:1 // 0=rect, 1=circle
+      life:2+rnd(0,1.5),shape:floor(rnd(0,3)) // 0=rect, 1=circle, 2=triangle
+    });
+  }
+  for(let i=0;i<40;i++){
+    confetti.push({
+      x:W/2+rnd(-30,30),y:H*.18+rnd(-10,10),
+      vx:rnd(-5,5),vy:rnd(-9,-3),
+      sz:rnd(3,7),rot:rnd(0,TAU),rv:rnd(-8,8),
+      col:colors[floor(rnd(0,colors.length))],
+      life:1.5+rnd(0,1),shape:floor(rnd(0,3))
     });
   }
 }
@@ -2278,10 +2347,21 @@ function spawnConfetti(){
 // ================================================================
 //  GRID HELPERS
 // ================================================================
-// Grid fills almost the entire screen width. Minimal 8px padding per side.
-function getCellSize(){return min((W-16)/gridCols,(H*.70)/gridRows)}
-function getGridX(){return(W-gridCols*getCellSize())/2}
-function getGridY(){return H*.15} // grid below the title row at TOP_Y=75 + stars at TOP_Y+22
+// Cell size is sized to fit the fixed STAGE field (not the per-level grid).
+// Stage stays the same on every level → cell size is constant; small levels
+// just sit inside a sea of background dots. Cells ~12% smaller than before
+// to match competitor dot-grid look.
+// Stage extends a few cells past the level on every side so the player has
+// room to pan/look around. The dot field rendered earlier is the level's
+// occupied cells only — these stage paddings are pure breathing room.
+const STAGE_PAD=0;
+function _stageC(){return max(STAGE_COLS,gridCols+STAGE_PAD*2)}
+function _stageR(){return max(STAGE_ROWS,gridRows+STAGE_PAD*2)}
+function getCellSize(){return min((W-32)/_stageC(),(H*.58)/_stageR())}
+function getStageX(){return(W-_stageC()*getCellSize())/2}
+function getStageY(){return H*.20}
+function getGridX(){return getStageX()+floor((_stageC()-gridCols)/2)*getCellSize()}
+function getGridY(){return getStageY()+floor((_stageR()-gridRows)/2)*getCellSize()}
 
 // ================================================================
 //  DRAWING HELPERS
@@ -2347,13 +2427,11 @@ function getPathSegment(path,sFrom,sTo){
 function drawArrowPolyline(pts,sz,col,alpha){
   if(pts.length<2)return;
   // Thin lines scaled to cell size. Min 2px keeps lines visible at tiny cells.
-  // Stroke / arrowhead sizing. Bumped from .10/.32/.22 to .14/.34/.26 so
-  // the lines read as fat "ropes" the way competitor games (Arrow Jam Go,
-  // Arrows Escape Puzzle) draw them — the previous thin stroke looked
-  // sketchy next to a dense-fill grid. Min stroke 2px so very small cells
-  // on max-density boards don't disappear into hairlines.
-  const thick=max(2,sz*.14);
-  const headL=sz*.34,headW=sz*.26;
+  // Per competitor reference screenshots (Arrow Jam Go, Arrows Escape):
+  // arrows visually fill ~25-30% of cell width so adjacent snakes form
+  // contiguous-looking maze walls. Bumped .14 → .28.
+  const thick=max(2.5,sz*.22);
+  const headL=sz*.38,headW=sz*.32;
 
   X.save();
   X.globalAlpha=alpha==null?1:alpha;
@@ -2557,6 +2635,22 @@ function drawBigBtn(label,x,y,w,h,color){
   txt(label,x,y,floor(h*.4),TH.btnText);
   if(!blocked&&tapped&&abs(tapX-x)<w/2&&abs(tapY-y)<h/2){sfx.tap();haptic(5);tapped=false;return true}
   return false;
+}
+
+// Filled play-triangle icon (▶ replacement) — matches arrowsgo's look:
+// a small solid triangle with rounded points sitting flush with the label.
+function drawPlayIcon(x,y,sz,col){
+  X.save();
+  X.translate(x,y);
+  X.fillStyle=col||TH.btnText;
+  X.lineJoin='round';X.lineWidth=sz*.18;X.strokeStyle=X.fillStyle;
+  X.beginPath();
+  X.moveTo(-sz*.4,-sz*.55);
+  X.lineTo(sz*.55,0);
+  X.lineTo(-sz*.4,sz*.55);
+  X.closePath();
+  X.fill();X.stroke();
+  X.restore();
 }
 
 function drawStar(x,y,sz,filled){
@@ -2841,6 +2935,14 @@ function drawPlay(){
   // Advance level reveal animation (staggered fade-in of all arrows)
   if(levelRevealT<1)levelRevealT=min(1,levelRevealT+dt/.9);
 
+  // Intro zoom: lerp zoomLevel from the wide start to the auto-fit target
+  // with an easeOutCubic curve. The pull-in lasts _zoomIntroDur seconds.
+  if(_zoomIntroT<1){
+    _zoomIntroT=min(1,_zoomIntroT+dt/_zoomIntroDur);
+    const e=1-Math.pow(1-_zoomIntroT,3);
+    zoomLevel=_zoomFrom+(_zoomTarget-_zoomFrom)*e;
+  }
+
   // === ZOOM/PAN BLOCK START ===
   // Wrap grid + arrows + tap detection + flying animations in a save/restore
   // pair so the player's pinch-zoom and pan affect everything that "belongs
@@ -2857,13 +2959,39 @@ function drawPlay(){
   // visible after arrows clear (graph-paper aesthetic per audit + competitor
   // reference). Drawn before arrows so live cells overlap the dot but cleared
   // cells expose it.
+  // Dot grid — drawn per-cell so the win wave can pulse each dot's radius
+  // based on its distance from the wave origin (replaces the old ring
+  // ripple per user request: dots themselves swell briefly and settle).
   X.fillStyle=darkMode?'rgba(255,255,255,.10)':'rgba(0,0,0,.10)';
   const _dotR=max(1,cs*.06);
-  for(let r=0;r<gridRows;r++){
-    for(let c=0;c<gridCols;c++){
-      const cx=gx+c*cs+cs/2,cy=gy+r*cs+cs/2;
-      X.beginPath();X.arc(cx,cy,_dotR,0,TAU);X.fill();
+  const _hasWave=!!_winWave;
+  let _waveP=0,_waveX=0,_waveY=0,_waveSpeed=0;
+  if(_hasWave){
+    _winWave.t+=dt;
+    _waveP=_winWave.t/_winWave.dur;
+    _waveX=_winWave.x;_waveY=_winWave.y;
+    // Wave front travels far enough to reach screen corners by p=1.
+    _waveSpeed=max(W,H)*1.1;
+    if(_waveP>=1)_winWave=null;
+  }
+  for(const k of _levelCells){
+    const i=k.indexOf(',');
+    const r=+k.slice(0,i),c=+k.slice(i+1);
+    const cx=gx+c*cs+cs/2,cy=gy+r*cs+cs/2;
+    let scale=1;
+    if(_hasWave){
+      // Distance from wave origin → time for the front to arrive at this dot.
+      const dx=cx-_waveX,dy=cy-_waveY;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      const arriveP=d/_waveSpeed;
+      // Each dot's local "wave time" is a 0..1 window centred on the
+      // wave front passing through it. Bell curve (sin(πx)) makes the
+      // dot deflate down to ~30% then settle back — looks like the
+      // dot is briefly "pushed in" by a passing pulse.
+      const wlocal=(_waveP-arriveP)/0.18; // 0..1 over 18% of total dur
+      if(wlocal>0&&wlocal<1)scale=1-Math.sin(wlocal*PI)*0.7;
     }
+    X.beginPath();X.arc(cx,cy,_dotR*scale,0,TAU);X.fill();
   }
 
   // Draw all alive arrows as continuous paths through their cells
@@ -2957,10 +3085,42 @@ function drawPlay(){
       X.closePath();X.fill();
       X.globalAlpha=1;
 
+      // Finger pointer — animated taps over the suggested arrow's head.
+      // 1.4s loop: hover (scale=1) → tap (scale=0.78) → release (scale=1)
+      // with a fading ring on the down-stroke. Reads like a real demo without
+      // freezing the player out of the game (they can still tap whenever).
+      const tapCycle=1.4;
+      const tt=(gt%tapCycle)/tapCycle; // 0..1
+      // Down-stroke 0..0.25, hold 0.25..0.4, release 0.4..0.55, idle 0.55..1
+      let tapScale=1;
+      let ringP=-1;
+      if(tt<0.25){tapScale=1-(tt/0.25)*0.22;ringP=tt/0.25;}
+      else if(tt<0.40){tapScale=0.78;ringP=1;}
+      else if(tt<0.55){tapScale=0.78+((tt-0.40)/0.15)*0.22;}
+      const fX=hx,fY=hy;
+      // Tap ring: expanding circle that fades, only during the press window.
+      if(ringP>=0){
+        X.save();
+        X.globalAlpha=(1-ringP)*0.6;
+        X.strokeStyle=TH.star;
+        X.lineWidth=2;
+        X.beginPath();X.arc(fX,fY,cs*0.4+ringP*cs*0.5,0,TAU);X.stroke();
+        X.restore();
+      }
+      // Pointer body — a soft dark circle (the "fingertip") with a smaller
+      // bright dot (the touch point). Offset slightly down-right so it
+      // doesn't sit dead-centre on the arrow head it's pointing at.
+      X.save();
+      X.translate(fX+cs*0.12,fY+cs*0.12);
+      X.scale(tapScale,tapScale);
+      X.globalAlpha=0.85;
+      X.fillStyle=darkMode?'rgba(255,255,255,.92)':'rgba(40,30,20,.85)';
+      X.beginPath();X.arc(0,0,cs*0.32,0,TAU);X.fill();
+      X.fillStyle=TH.accent;
+      X.beginPath();X.arc(0,0,cs*0.18,0,TAU);X.fill();
+      X.restore();
+
       // Text — only at start of level so it doesn't keep nagging.
-      // Positioned BELOW the stars row (which sits at TOP_Y+22) so the
-      // hint copy doesn't collide with the level title or stars on
-      // tutorial levels — bug visible on level 1/2 in v1.0.14.
       if(moves===0){
         txt('Tap this arrow',W/2,TOP_Y+44,14,TH.star,'center','700');
         txt('It has a clear path to the edge',W/2,TOP_Y+62,11,darkMode?'#aaa':'#666');
@@ -3076,8 +3236,9 @@ function drawComplete(){
     X.globalAlpha=clp(p.life,0,1);
     X.fillStyle=p.col;
     X.save();X.translate(p.x,p.y);X.rotate(p.rot);
-    if(p.shape===0)X.fillRect(-p.sz/2,-p.sz/2,p.sz,p.sz*.6);
-    else{X.beginPath();X.arc(0,0,p.sz/2,0,TAU);X.fill()}
+    if(p.shape===0){X.fillRect(-p.sz/2,-p.sz/2,p.sz,p.sz*.6);}
+    else if(p.shape===1){X.beginPath();X.arc(0,0,p.sz/2,0,TAU);X.fill();}
+    else{X.beginPath();X.moveTo(0,-p.sz/2);X.lineTo(p.sz/2,p.sz/2);X.lineTo(-p.sz/2,p.sz/2);X.closePath();X.fill();}
     X.restore();
     X.globalAlpha=1;
   }
@@ -3393,40 +3554,60 @@ function drawGameOver(){
     goto('play',()=>{generateLevel(level)});
   }
 
-  // Continue for coins
+  // Continue for coins — pill-styled like every other button in the app
+  // (drawBtn shape & color tokens), with the cost block right-aligned.
   const canContinue=coins>=CONTINUE_COST;
   const cby=H*.58,cbw=220,cbh=42;
-  const cbhv=abs(mx-W/2)<cbw/2&&abs(my-cby)<cbh/2;
-  // Design system tokens (matches drawBigBtn): fill 18/30, stroke 50, lw 1.5
+  const c=canContinue?TH.star:null; // pass null when greyed out
+  const blocked=_inputBlocked();
+  const cbhv=!blocked&&abs(mx-W/2)<cbw/2&&abs(my-cby)<cbh/2;
+  const sc=btnPressScale(W/2,cby,cbw,cbh);
+  const dw=cbw*sc,dh=cbh*sc;
   X.fillStyle=canContinue?(cbhv?TH.star+'30':TH.star+'18'):TH.btnBg;
-  X.beginPath();X.roundRect(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);X.fill();
+  X.beginPath();X.roundRect(W/2-dw/2,cby-dh/2,dw,dh,dh/2);X.fill();
   X.strokeStyle=canContinue?TH.star+'50':TH.border;X.lineWidth=1.5;
-  X.beginPath();X.roundRect(W/2-cbw/2,cby-cbh/2,cbw,cbh,cbh/2);X.stroke();
-  // Layout: label slightly LEFT of center, price block slightly RIGHT.
-  // Was W/2-28 / +22 / +33 — Russian "ПРОДОЛЬЖИТЬ" with its tall ь visually
-  // collided with the coin icon. Shift the price block ~14px right to
-  // give the label breathing room (audit fix).
-  txt(t('continueBtn'),W/2-34,cby,14,canContinue?TH.text:TH.textDim);
-  drawCoin(W/2+36,cby,7);
-  txt(CONTINUE_COST+'',W/2+47,cby,12,canContinue?TH.star:TH.textDim,'left');
-  if(tapped&&abs(tapX-W/2)<cbw/2&&abs(tapY-cby)<cbh/2){
-    if(canContinue)continueFromGameover();
+  X.beginPath();X.roundRect(W/2-dw/2,cby-dh/2,dw,dh,dh/2);X.stroke();
+  txt(t('continueBtn'),W/2-30,cby,14,canContinue?TH.btnText:TH.textDim);
+  drawCoin(W/2+38,cby,7);
+  txt(CONTINUE_COST+'',W/2+50,cby,12,canContinue?TH.star:TH.textDim,'left');
+  if(!blocked&&tapped&&abs(tapX-W/2)<cbw/2&&abs(tapY-cby)<cbh/2){
+    if(canContinue){sfx.tap();continueFromGameover();}
     tapped=false;
   }
 
-  // Continue by watching ad (FREE alternative). Label uses existing
-  // continueBtn translation + a play-icon cue so it stays short on every
-  // language and reads as "continue via video" rather than reading
-  // hardcoded English on a Russian device (audit fix).
-  const aby=H*.66;
-  if(drawBtn(t('continueBtn')+' ▶',W/2,aby,220,42,TH.success)){
+  // Continue by watching ad (FREE alternative) — same pill style with
+  // a real play-triangle icon (was a unicode ▶ which rendered inconsistently
+  // across languages and looked off-brand).
+  const aby=H*.66,abw=220,abh=42;
+  const abhv=!blocked&&abs(mx-W/2)<abw/2&&abs(my-aby)<abh/2;
+  const asc=btnPressScale(W/2,aby,abw,abh);
+  const adw=abw*asc,adh=abh*asc;
+  X.fillStyle=abhv?TH.success+'30':TH.success+'18';
+  X.beginPath();X.roundRect(W/2-adw/2,aby-adh/2,adw,adh,adh/2);X.fill();
+  X.strokeStyle=TH.success+'50';X.lineWidth=1.5;
+  X.beginPath();X.roundRect(W/2-adw/2,aby-adh/2,adw,adh,adh/2);X.stroke();
+  txt(t('continueBtn'),W/2-12,aby,14,TH.btnText);
+  drawPlayIcon(W/2+50,aby,9,TH.success);
+  if(!blocked&&tapped&&abs(tapX-W/2)<abw/2&&abs(tapY-aby)<abh/2){
+    sfx.tap();tapped=false;
     showRewardedAd(()=>{undosLeft=3;S='play'});
   }
 
-  // Watch ad for coins (when low on coins). Localized via t('watchAd').
+  // Watch ad for coins (when low on coins).
   if(coins<CONTINUE_COST){
-    if(drawBtn('+'+AD_COIN_REWARD+' '+t('coins').toUpperCase()+' ▶',W/2,H*.73,220,38,TH.star)){
-      showRewardedAd(()=>{coins+=AD_COIN_REWARD;totalCoinsEarned+=AD_COIN_REWARD;save();spawnFloater(W/2,H*.73,'+'+AD_COIN_REWARD)});
+    const cy=H*.73,cw=220,ch=38;
+    const chv=!blocked&&abs(mx-W/2)<cw/2&&abs(my-cy)<ch/2;
+    const csc=btnPressScale(W/2,cy,cw,ch);
+    const cdw=cw*csc,cdh=ch*csc;
+    X.fillStyle=chv?TH.star+'30':TH.star+'18';
+    X.beginPath();X.roundRect(W/2-cdw/2,cy-cdh/2,cdw,cdh,cdh/2);X.fill();
+    X.strokeStyle=TH.star+'50';X.lineWidth=1.5;
+    X.beginPath();X.roundRect(W/2-cdw/2,cy-cdh/2,cdw,cdh,cdh/2);X.stroke();
+    txt('+'+AD_COIN_REWARD+' '+t('coins').toUpperCase(),W/2-16,cy,13,TH.btnText);
+    drawPlayIcon(W/2+58,cy,8,TH.star);
+    if(!blocked&&tapped&&abs(tapX-W/2)<cw/2&&abs(tapY-cy)<ch/2){
+      sfx.tap();tapped=false;
+      showRewardedAd(()=>{coins+=AD_COIN_REWARD;totalCoinsEarned+=AD_COIN_REWARD;save();spawnFloater(W/2,cy,'+'+AD_COIN_REWARD)});
     }
   }
 
